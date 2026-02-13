@@ -41,7 +41,6 @@ This project uses **Laravel Sail (Docker)** for the development environment. Pos
 
 - Docker + Docker Compose
 - PHP + Composer (only to install dependencies and run Sail)
-- Node.js (optional locally; you can also run npm through Sail)
 
 > You do **not** need local PostgreSQL. Sail runs Postgres + pgvector in Docker.
 
@@ -63,12 +62,11 @@ cd laravel-knowledge-base-mcp
 
 ### 1) Install dependencies
 ```bash
-sail composer install
-sail npm install
+composer install
 ```
-### 3) Configure `.env` for Sail Postgres
+### 2) Configure `.env`
 
-Sail runs Postgres in a separate Docker container. From the Laravel container, the database host is the Docker service name `pgsql` (not `localhost`):
+Sail runs Postgres in a separate Docker container. From the Laravel container, the database host is the Docker service name `pgsql`:
 
 ```ini
 DB_CONNECTION=pgsql
@@ -77,11 +75,14 @@ DB_PORT=5432
 DB_DATABASE=laravel_kb
 DB_USERNAME=sail
 DB_PASSWORD=secret
+``` 
+
+Create your local environment file with command:
+```bash
+cp .env.example .env
 ```
 
-If your repo already ships these values, keep them. The critical part is `DB_HOST=pgsql` when using Sail.
-
-### 4) Start the containers
+### 3) Start the containers
 #### Optional: Sail alias (recommended)
 
 Run this so you dont need to add `./vendor/bin/sail` to your commands and use `sail` instead:
@@ -89,20 +90,25 @@ Run this so you dont need to add `./vendor/bin/sail` to your commands and use `s
 ```bash
 alias sail='sh $([ -f sail ] && echo sail || echo vendor/bin/sail)'
 ```
-Start the containers:
+### Fast setup (recommended)
+```bash
+npm run setup
+```
+### Manual setup (step-by-step)
+### 1) Start the containers:
 ```bash
 sail up -d
 ```
 
-### 5) App key + migrations + seed
+### 2) App key + migrations + seed
 ```bash
 sail artisan key:generate
 sail artisan migrate --seed
-
 ```
 
-### 6) Build assets
+### 3) Install frontend deps + build assets
 ```bash
+sail npm ci
 sail npm run build
 ```
 
@@ -113,7 +119,7 @@ Open:
 
 ## Testing
 
-Run tests inside Sail (uses the Docker Postgres service):
+Run tests inside Sail:
 ```bash
 sail test
 ```

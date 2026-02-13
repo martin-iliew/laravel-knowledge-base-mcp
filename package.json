@@ -9,7 +9,8 @@
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
-        "types": "tsc --noEmit"
+        "types": "tsc --noEmit",
+        "setup": "set -e; ./vendor/bin/sail down -v; ./vendor/bin/sail up -d; ./vendor/bin/sail exec -T pgsql sh -c 'i=0; while [ $i -lt 60 ]; do pg_isready >/dev/null 2>&1 && exit 0; i=$((i+1)); sleep 1; done; exit 1'; ./vendor/bin/sail artisan key:generate; ./vendor/bin/sail artisan migrate --seed; ./vendor/bin/sail npm ci; ./vendor/bin/sail npm run build"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
