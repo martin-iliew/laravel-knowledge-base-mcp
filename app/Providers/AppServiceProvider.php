@@ -11,6 +11,8 @@ use Illuminate\Validation\Rules\Password;
 use App\Models\CodeExample;
 use App\Models\KnowledgeItem;
 use App\Models\KnowledgeResource;
+use App\Models\User;
+
 use App\Observers\CodeExampleObserver;
 use App\Observers\KnowledgeItemObserver;
 use App\Observers\KnowledgeResourceObserver;
@@ -34,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         Relation::enforceMorphMap([
+            'user' => User::class,
             'code' => CodeExample::class,
             'resource' => KnowledgeResource::class,
         ]);
