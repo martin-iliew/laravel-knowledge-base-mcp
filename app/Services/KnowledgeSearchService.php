@@ -15,7 +15,8 @@ class KnowledgeSearchService
         int $limit = 5,
         ?string $category = null,
         array $tags = [],
-        bool $includeDrafts = false
+        bool $includeDrafts = false,
+        ?int $userId = null
     ): array {
         $limit = max(1, min($limit, (int) config('knowledge.limits.items')));
 
@@ -27,8 +28,8 @@ class KnowledgeSearchService
         $fts = (string) config('knowledge.hybrid.fts_config');
         $minSim = (float) config('knowledge.defaults.min_similarity');
 
-        $denseIds = $this->dense($query, $denseK, $minSim, $category, $tags, $includeDrafts);
-        $sparseIds = $this->sparse($query, $sparseK, $fts, $category, $tags, $includeDrafts);
+        $denseIds = $this->dense($query, $denseK, $minSim, $category, $tags, $includeDrafts, $userId);
+        $sparseIds = $this->sparse($query, $sparseK, $fts, $category, $tags, $includeDrafts, $userId);
 
         $fusedIds = $this->rrf($denseIds, $sparseIds, $rrfK, $fusedK);
 
@@ -49,11 +50,15 @@ class KnowledgeSearchService
         return $this->assemble($reranked, $limit);
     }
 
-    private function dense(string $query, int $k, float $minSim, ?string $category, array $tags, bool $includeDrafts): array
+    private function dense(string $query, int $k, float $minSim, ?string $category, array $tags, bool $includeDrafts, ?int $userId): array
     {
         return KnowledgeChunk::query()
             ->select(['knowledge_chunks.id'])
-            ->whereHas('item', function ($q) use ($category, $tags, $includeDrafts) {
+            ->whereHas('item', function ($q) use ($category, $tags, $includeDrafts, $userId) {
+                if ($userId) { 
+                    $q->where('created_by', $userId);
+                }
+
                 if (!$includeDrafts) {
                     $q->published();
                 }
@@ -72,13 +77,17 @@ class KnowledgeSearchService
             ->all();
     }
 
-    private function sparse(string $query, int $k, string $fts, ?string $category, array $tags, bool $includeDrafts): array
+    private function sparse(string $query, int $k, string $fts, ?string $category, array $tags, bool $includeDrafts, ?int $userId): array
     {
         $q = KnowledgeChunk::query()
             ->select('knowledge_chunks.id')
             ->join('knowledge_items', 'knowledge_items.id', '=', 'knowledge_chunks.knowledge_item_id')
             ->whereRaw("knowledge_chunks.chunk_tsv @@ websearch_to_tsquery(?, ?)", [$fts, $query]);
 
+        if ($userId) {
+            $q->where('knowledge_items.created_by', $userId);
+        }
+        
         if (!$includeDrafts) {
             $q->where('knowledge_items.status', 'published')
                 ->where(function ($w) {
