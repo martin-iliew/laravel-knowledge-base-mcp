@@ -10,6 +10,10 @@ use Laravel\Mcp\Server\Schemas\JsonSchema;
 
 class SearchKnowledgeBaseTool extends Tool
 {
+    
+    protected string $name = 'search-knowledge-base'; 
+    protected string $description = 'Search the authenticated user’s knowledge base using hybrid retrieval.'; 
+
     public function schema(JsonSchema $schema): array
     {
         return $schema->object([
@@ -30,6 +34,11 @@ class SearchKnowledgeBaseTool extends Tool
 
     public function handle(Request $request, KnowledgeSearchService $search): Response
     {
+        $user = $request->user(); 
+        if (! $user) { 
+            return Response::error('Unauthorized.');
+        }
+
         $query = (string) $request->input('query');
         $limit = (int) $request->input('limit', 5);
         $category = $request->input('category');
@@ -41,7 +50,8 @@ class SearchKnowledgeBaseTool extends Tool
             limit: $limit,
             category: is_string($category) ? $category : null,
             tags: $tags,
-            includeDrafts: $includeDrafts
+            includeDrafts: $includeDrafts,
+            userId: $user->id
         );
 
         return Response::structured(['results' => $results]);

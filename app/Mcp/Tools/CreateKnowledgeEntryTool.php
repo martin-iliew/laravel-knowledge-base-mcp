@@ -11,6 +11,9 @@ use Laravel\Mcp\Server\Schemas\JsonSchema;
 
 class CreateKnowledgeEntryTool extends Tool
 {
+    protected string $name = 'create-knowledge-entry';
+    protected string $description = 'Create a draft knowledge item for the authenticated user.';
+    
     public function schema(JsonSchema $schema): array
     {
         return $schema->object([
@@ -41,6 +44,11 @@ class CreateKnowledgeEntryTool extends Tool
         $slug = $slugBase;
         $i = 2;
 
+        $user = $request->user(); 
+        if (! $user) { 
+            return Response::error('Unauthorized.');
+        }
+
         while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
             $slug = $slugBase . '-' . $i;
             $i++;
@@ -54,6 +62,7 @@ class CreateKnowledgeEntryTool extends Tool
             'tags' => $tags,
             'source' => 'ai',
             'status' => 'draft',
+            'created_by' => $user->id,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
             'embedding_dimensions' => (int) config('knowledge.defaults.embedding_dimensions'),
