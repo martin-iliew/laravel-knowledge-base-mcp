@@ -38,6 +38,10 @@ class KnowledgeItemObserver
 
     public function saved(KnowledgeItem $item): void
     {
+        if (! $item->wasChanged('index_version')) {
+            return;
+        }
+
         SyncKnowledgeItemIndex::dispatch($item->id, (int) $item->index_version)->afterCommit();
     }
 

@@ -139,7 +139,8 @@ class SyncKnowledgeItemIndex implements ShouldQueue
                 $specs[$idx]['embedding'] = $prev->embedding;
                 $specs[$idx]['embedded_at'] = $prev->embedded_at;
                 $specs[$idx]['embedding_dimensions'] = (int) $prev->embedding_dimensions;
-                $specs[$idx]['embedding_model'] = (string) ($prev->embedding_model ?? null);
+                $specs[$idx]['embedding_model'] = $prev->embedding_model ? (string) $prev->embedding_model : null;         
+
                 continue;
             }
 
@@ -152,10 +153,15 @@ class SyncKnowledgeItemIndex implements ShouldQueue
             $vectors = $response->embeddings;
 
             foreach ($toEmbedIndexes as $j => $specIndex) {
-                $specs[$specIndex]['embedding'] = $vectors[$j] ?? null;
+                $vector = $vectors[$j] ?? null;
+                if (!is_array($vector) || $vector === []) {
+                    throw new \RuntimeException("Embedding response missing vector at index {$j}.");
+                }
+
+                $specs[$specIndex]['embedding'] = $this->vectorLiteral($vector);
                 $specs[$specIndex]['embedded_at'] = now();
                 $specs[$specIndex]['embedding_dimensions'] = $dims;
-                $specs[$specIndex]['embedding_model'] = (string) ($response->model ?? null);
+                $specs[$specIndex]['embedding_model'] = null;
             }
         }
 
@@ -164,6 +170,10 @@ class SyncKnowledgeItemIndex implements ShouldQueue
 
             $insert = array_map(function (array $s) {
                 unset($s['embed_text']);
+                if (is_array($s['embedding'])) {
+                    $s['embedding'] = $this->vectorLiteral($s['embedding']);
+                }
+
                 return $s;
             }, $specs);
 
@@ -173,10 +183,19 @@ class SyncKnowledgeItemIndex implements ShouldQueue
                 'chunked_at' => now(),
                 'embedding_model' => $this->firstNonEmptyEmbeddingModel($insert),
                 'embedding_dimensions' => (int) config('knowledge.defaults.embedding_dimensions'),
-            ])->save();
+            ])->saveQuietly();
         });
     }
+    private function vectorLiteral(array $v): string
+    {
+        $nums = array_map(function ($x) {
+            if ($x === null) return '0';
+            if (is_int($x) || is_float($x)) return (string) $x;
+            return (string) (float) $x;
+        }, $v);
 
+        return '[' . implode(',', $nums) . ']';
+    }
     private function firstNonEmptyEmbeddingModel(array $specs): ?string
     {
         foreach ($specs as $s) {

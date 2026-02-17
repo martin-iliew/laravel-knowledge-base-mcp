@@ -51,7 +51,7 @@ class SearchKnowledgeBaseTool extends Tool
             category: is_string($category) ? $category : null,
             tags: $tags,
             includeDrafts: $includeDrafts,
-            userId: $user->id
+            userId: (int) $user->id
         );
 
         return Response::structured(['results' => $results]);
