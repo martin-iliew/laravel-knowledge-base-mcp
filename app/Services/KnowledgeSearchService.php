@@ -10,6 +10,25 @@ use Laravel\Ai\Reranking;
 
 class KnowledgeSearchService
 {
+    /**
+     * Search the knowledge base using hybrid retrieval (dense + sparse), fuse results,
+     * optionally rerank, then assemble an evidence-only payload.
+     *
+     * Pipeline:
+     * 1) Dense candidates (pgvector similarity)
+     * 2) Sparse candidates (Postgres FTS)
+     * 3) Fuse with Reciprocal Rank Fusion (RRF)
+     * 4) Optional AI rerank (Laravel AI reranking)
+     * 5) Assemble grouped by KnowledgeItem (snippets + referenced code/resources)
+     *
+     * @param string      $query         User query text
+     * @param int         $limit         Max number of items to return (bounded by config)
+     * @param string|null $category      Optional category filter
+     * @param array       $tags          Optional tags filter (AND semantics)
+     * @param bool        $includeDrafts Whether to include draft/unpublished items
+     * @param int|null    $userId        Optional owner scope (created_by)
+     * @return array                     Evidence-only payload grouped by item
+     */
     public function search(
         string $query,
         int $limit = 5,
@@ -18,53 +37,78 @@ class KnowledgeSearchService
         bool $includeDrafts = false,
         ?int $userId = null
     ): array {
-        $limit = max(1, min($limit, (int) config('knowledge.limits.items')));
+        $cfg = $this->config();
 
-        $denseK = (int) config('knowledge.hybrid.dense_k');
-        $sparseK = (int) config('knowledge.hybrid.sparse_k');
-        $fusedK = (int) config('knowledge.hybrid.fused_k');
-        $rrfK = (int) config('knowledge.hybrid.rrf_k');
-        $rerankK = (int) config('knowledge.hybrid.rerank_k');
-        $fts = (string) config('knowledge.hybrid.fts_config');
-        $minSim = (float) config('knowledge.defaults.min_similarity');
+        $limit = $this->normalizeLimit($limit, $cfg['items_limit']);
 
-        $denseIds = $this->dense($query, $denseK, $minSim, $category, $tags, $includeDrafts, $userId);
-        $sparseIds = $this->sparse($query, $sparseK, $fts, $category, $tags, $includeDrafts, $userId);
+        $denseIds = $this->dense($query, $cfg['dense_k'], $cfg['min_similarity'], $category, $tags, $includeDrafts, $userId);
+        $sparseIds = $this->sparse($query, $cfg['sparse_k'], $cfg['fts_config'], $category, $tags, $includeDrafts, $userId);
 
-        $fusedIds = $this->rrf($denseIds, $sparseIds, $rrfK, $fusedK);
+        $fusedIds = $this->rrf($denseIds, $sparseIds, $cfg['rrf_k'], $cfg['fused_k']);
 
         if ($fusedIds === []) {
             return [];
         }
 
-        $chunks = KnowledgeChunk::query()
-            ->with(['item'])
-            ->whereIn('id', $fusedIds)
-            ->get()
-            ->keyBy('id');
+        $orderedChunks = $this->loadChunksInFusedOrder($fusedIds);
 
-        $ordered = collect($fusedIds)
-            ->values()
-            ->map(function ($id, $rank) use ($chunks) {
-                $chunk = $chunks->get($id);
-                if (! $chunk) {
-                    return null;
-                }
-
-                $chunk->fused_rank = (int) $rank;
-
-                return $chunk;
-            })
-            ->filter()
-            ->values();
-
-        $reranked = $this->rerank($ordered, $query, $rerankK);
+        $reranked = $this->rerank($orderedChunks, $query, $cfg['rerank_k']);
 
         return $this->assemble($reranked, $limit);
     }
 
-    private function dense(string $query, int $k, float $minSim, ?string $category, array $tags, bool $includeDrafts, ?int $userId): array
+    /**
+     * Read and normalize all relevant search configuration in one place.
+     *
+     * @return array<string, int|float|string>
+     */
+    private function config(): array
     {
+        return [
+            'items_limit' => (int) config('knowledge.limits.items'),
+            'dense_k' => (int) config('knowledge.hybrid.dense_k'),
+            'sparse_k' => (int) config('knowledge.hybrid.sparse_k'),
+            'fused_k' => (int) config('knowledge.hybrid.fused_k'),
+            'rrf_k' => (int) config('knowledge.hybrid.rrf_k'),
+            'rerank_k' => (int) config('knowledge.hybrid.rerank_k'),
+            'fts_config' => (string) config('knowledge.hybrid.fts_config'),
+            'min_similarity' => (float) config('knowledge.defaults.min_similarity'),
+        ];
+    }
+
+    /**
+     * Clamp the requested item limit to [1..configMax].
+     *
+     * @param int $limit
+     * @param int $configMax
+     * @return int
+     */
+    private function normalizeLimit(int $limit, int $configMax): int
+    {
+        return max(1, min($limit, max(1, $configMax)));
+    }
+
+    /**
+     * Dense retrieval: vector similarity search against chunk embeddings with item-level filters.
+     *
+     * @param string      $query
+     * @param int         $k
+     * @param float       $minSim
+     * @param string|null $category
+     * @param array       $tags
+     * @param bool        $includeDrafts
+     * @param int|null    $userId
+     * @return array<int> Chunk IDs ordered by vector similarity
+     */
+    private function dense(
+        string $query,
+        int $k,
+        float $minSim,
+        ?string $category,
+        array $tags,
+        bool $includeDrafts,
+        ?int $userId
+    ): array {
         return KnowledgeChunk::query()
             ->select(['knowledge_chunks.id'])
             ->whereHas('item', function ($q) use ($category, $tags, $includeDrafts, $userId) {
@@ -90,8 +134,27 @@ class KnowledgeSearchService
             ->all();
     }
 
-    private function sparse(string $query, int $k, string $fts, ?string $category, array $tags, bool $includeDrafts, ?int $userId): array
-    {
+    /**
+     * Sparse retrieval: full-text search (FTS) over chunk_tsv with item-level filters.
+     *
+     * @param string      $query
+     * @param int         $k
+     * @param string      $fts
+     * @param string|null $category
+     * @param array       $tags
+     * @param bool        $includeDrafts
+     * @param int|null    $userId
+     * @return array<int> Chunk IDs ordered by FTS rank
+     */
+    private function sparse(
+        string $query,
+        int $k,
+        string $fts,
+        ?string $category,
+        array $tags,
+        bool $includeDrafts,
+        ?int $userId
+    ): array {
         $q = KnowledgeChunk::query()
             ->select('knowledge_chunks.id')
             ->join('knowledge_items', 'knowledge_items.id', '=', 'knowledge_chunks.knowledge_item_id')
@@ -116,12 +179,24 @@ class KnowledgeSearchService
             $q->whereJsonContains('knowledge_items.tags', $tag);
         }
 
-        return $q->orderByRaw('ts_rank_cd(knowledge_chunks.chunk_tsv, websearch_to_tsquery(?, ?)) DESC', [$fts, $query])
+        return $q->orderByRaw(
+            'ts_rank_cd(knowledge_chunks.chunk_tsv, websearch_to_tsquery(?, ?)) DESC',
+            [$fts, $query]
+        )
             ->limit($k)
             ->pluck('knowledge_chunks.id')
             ->all();
     }
 
+    /**
+     * Fuse two ranked ID lists using Reciprocal Rank Fusion (RRF).
+     *
+     * @param array<int> $dense
+     * @param array<int> $sparse
+     * @param int        $k    RRF constant
+     * @param int        $take Max fused results to return
+     * @return array<int>      Fused IDs, best first
+     */
     private function rrf(array $dense, array $sparse, int $k, int $take): array
     {
         $scores = [];
@@ -139,6 +214,45 @@ class KnowledgeSearchService
         return array_slice(array_keys($scores), 0, $take);
     }
 
+    /**
+     * Load chunks by ID and return them ordered exactly as the fused ID list.
+     * Adds a fused_rank attribute matching the fused order index.
+     *
+     * @param array<int> $fusedIds
+     * @return Collection<int, KnowledgeChunk>
+     */
+    private function loadChunksInFusedOrder(array $fusedIds): Collection
+    {
+        $chunksById = KnowledgeChunk::query()
+            ->with(['item'])
+            ->whereIn('id', $fusedIds)
+            ->get()
+            ->keyBy('id');
+
+        return collect($fusedIds)
+            ->values()
+            ->map(function ($id, $rank) use ($chunksById) {
+                $chunk = $chunksById->get($id);
+                if (! $chunk) {
+                    return null;
+                }
+
+                $chunk->fused_rank = (int) $rank;
+
+                return $chunk;
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * Rerank candidate chunks. If AI rerank is not configured or fails, fallback to fused order.
+     *
+     * @param Collection<int, KnowledgeChunk> $chunks Candidates in fused order
+     * @param string                          $query
+     * @param int                             $limit  Max results after rerank
+     * @return Collection<int, KnowledgeChunk>        Reranked chunks (or fused fallback)
+     */
     private function rerank(Collection $chunks, string $query, int $limit): Collection
     {
         if ($chunks->isEmpty()) {
@@ -149,27 +263,7 @@ class KnowledgeSearchService
             return $chunks->take($limit)->values();
         }
 
-        $docs = $chunks->map(function ($c) {
-            $title = $c->item?->title ?? '';
-            $cat = $c->item?->category ?? '';
-            $meta = is_array($c->meta) ? $c->meta : [];
-            $heading = '';
-
-            if (! empty($meta['heading_path']) && is_array($meta['heading_path'])) {
-                $heading = implode(' > ', $meta['heading_path']);
-            }
-
-            $p = trim("Title: {$title}\nCategory: {$cat}");
-            if ($heading !== '') {
-                $p .= "\nSection: {$heading}";
-            }
-
-            if (! empty($meta['filename'])) {
-                $p .= "\nFile: {$meta['filename']}";
-            }
-
-            return trim($p."\n\n".$c->chunk_text);
-        })->all();
+        $docs = $chunks->map(fn ($c) => $this->buildRerankDocument($c))->all();
 
         try {
             $ranked = Reranking::of($docs)->limit($limit)->rerank($query);
@@ -198,6 +292,42 @@ class KnowledgeSearchService
             ->values();
     }
 
+    /**
+     * Build a stable, information-rich document string for reranking.
+     * Keeps the same content structure as before: metadata header + chunk text.
+     *
+     * @param KnowledgeChunk $chunk
+     * @return string
+     */
+    private function buildRerankDocument(KnowledgeChunk $chunk): string
+    {
+        $title = $chunk->item?->title ?? '';
+        $cat = $chunk->item?->category ?? '';
+        $meta = is_array($chunk->meta) ? $chunk->meta : [];
+        $heading = '';
+
+        if (! empty($meta['heading_path']) && is_array($meta['heading_path'])) {
+            $heading = implode(' > ', $meta['heading_path']);
+        }
+
+        $p = trim("Title: {$title}\nCategory: {$cat}");
+
+        if ($heading !== '') {
+            $p .= "\nSection: {$heading}";
+        }
+
+        if (! empty($meta['filename'])) {
+            $p .= "\nFile: {$meta['filename']}";
+        }
+
+        return trim($p . "\n\n" . $chunk->chunk_text);
+    }
+
+    /**
+     * Decide whether AI reranking should be used based on feature flag and provider key presence.
+     *
+     * @return bool
+     */
     private function shouldUseAiRerank(): bool
     {
         if (! (bool) config('knowledge.hybrid.enable_ai_rerank')) {
@@ -214,6 +344,19 @@ class KnowledgeSearchService
         return is_string($providerKey) && trim($providerKey) !== '';
     }
 
+    /**
+     * Assemble evidence-only response grouped by KnowledgeItem.
+     *
+     * Output structure per item:
+     * - item: id/slug/title/category/tags/updated_at
+     * - snippets: chunk-level evidence (ordered by rerank score when present, else fused order)
+     * - code_examples: only referenced by snippets (capped)
+     * - resources: only referenced by snippets (capped)
+     *
+     * @param Collection<int, KnowledgeChunk> $chunks
+     * @param int                             $limit
+     * @return array
+     */
     private function assemble(Collection $chunks, int $limit): array
     {
         $maxChunksPerItem = (int) config('knowledge.limits.chunks_per_item');
@@ -230,12 +373,12 @@ class KnowledgeSearchService
                 continue;
             }
 
-            $id = $item->id;
+            $itemId = $item->id;
 
-            if (! isset($byItem[$id])) {
+            if (! isset($byItem[$itemId])) {
                 $updatedAt = $item->updated_at;
 
-                $byItem[$id] = [
+                $byItem[$itemId] = [
                     'item' => [
                         'id' => $item->id,
                         'slug' => $item->slug,
@@ -250,7 +393,7 @@ class KnowledgeSearchService
                 ];
             }
 
-            if (count($byItem[$id]['snippets']) >= $maxChunksPerItem) {
+            if (count($byItem[$itemId]['snippets']) >= $maxChunksPerItem) {
                 continue;
             }
 
@@ -258,7 +401,7 @@ class KnowledgeSearchService
             $rerankRank = $chunk->getAttribute('rerank_rank');
             $fusedRank = $chunk->getAttribute('fused_rank');
 
-            $byItem[$id]['snippets'][] = [
+            $byItem[$itemId]['snippets'][] = [
                 'source_type' => $chunk->source_type,
                 'source_id' => $chunk->source_id,
                 'chunk_kind' => $chunk->chunk_kind,
@@ -290,37 +433,7 @@ class KnowledgeSearchService
             ->keyBy('id');
 
         foreach ($byItem as &$row) {
-            $row['snippets'] = collect($row['snippets'])
-                ->sort(function (array $a, array $b): int {
-                    $aHasScore = $a['score'] !== null;
-                    $bHasScore = $b['score'] !== null;
-
-                    if ($aHasScore !== $bHasScore) {
-                        return $aHasScore ? -1 : 1;
-                    }
-
-                    if ($aHasScore && $bHasScore) {
-                        if ($a['score'] !== $b['score']) {
-                            return $a['score'] < $b['score'] ? 1 : -1;
-                        }
-
-                        $aRerank = $a['_rerank_rank'] ?? PHP_INT_MAX;
-                        $bRerank = $b['_rerank_rank'] ?? PHP_INT_MAX;
-
-                        if ($aRerank !== $bRerank) {
-                            return $aRerank <=> $bRerank;
-                        }
-                    }
-
-                    return $a['_fused_rank'] <=> $b['_fused_rank'];
-                })
-                ->map(function (array $snippet): array {
-                    unset($snippet['_fused_rank'], $snippet['_rerank_rank']);
-
-                    return $snippet;
-                })
-                ->values()
-                ->all();
+            $row['snippets'] = $this->sortSnippets($row['snippets']);
 
             $snips = $row['snippets'];
 
@@ -360,5 +473,50 @@ class KnowledgeSearchService
         }
 
         return array_values(array_slice($byItem, 0, $limit, true));
+    }
+
+    /**
+     * Sort snippets with the same precedence as before:
+     * 1) Snippets with score first
+     * 2) Higher score first
+     * 3) Lower rerank_rank first (when score ties)
+     * 4) Lower fused_rank first (final tie-break)
+     *
+     * @param array<int, array> $snippets
+     * @return array<int, array>
+     */
+    private function sortSnippets(array $snippets): array
+    {
+        return collect($snippets)
+            ->sort(function (array $a, array $b): int {
+                $aHasScore = $a['score'] !== null;
+                $bHasScore = $b['score'] !== null;
+
+                if ($aHasScore !== $bHasScore) {
+                    return $aHasScore ? -1 : 1;
+                }
+
+                if ($aHasScore && $bHasScore) {
+                    if ($a['score'] !== $b['score']) {
+                        return $a['score'] < $b['score'] ? 1 : -1;
+                    }
+
+                    $aRerank = $a['_rerank_rank'] ?? PHP_INT_MAX;
+                    $bRerank = $b['_rerank_rank'] ?? PHP_INT_MAX;
+
+                    if ($aRerank !== $bRerank) {
+                        return $aRerank <=> $bRerank;
+                    }
+                }
+
+                return $a['_fused_rank'] <=> $b['_fused_rank'];
+            })
+            ->map(function (array $snippet): array {
+                unset($snippet['_fused_rank'], $snippet['_rerank_rank']);
+
+                return $snippet;
+            })
+            ->values()
+            ->all();
     }
 }
