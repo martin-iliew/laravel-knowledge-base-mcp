@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\CodeExample;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeResource;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Reranking;
 
@@ -44,7 +43,20 @@ class KnowledgeSearchService
             ->get()
             ->keyBy('id');
 
-        $ordered = collect($fusedIds)->map(fn ($id) => $chunks->get($id))->filter()->values();
+        $ordered = collect($fusedIds)
+            ->values()
+            ->map(function ($id, $rank) use ($chunks) {
+                $chunk = $chunks->get($id);
+                if (! $chunk) {
+                    return null;
+                }
+
+                $chunk->fused_rank = (int) $rank;
+
+                return $chunk;
+            })
+            ->filter()
+            ->values();
 
         $reranked = $this->rerank($ordered, $query, $rerankK);
 
@@ -56,11 +68,11 @@ class KnowledgeSearchService
         return KnowledgeChunk::query()
             ->select(['knowledge_chunks.id'])
             ->whereHas('item', function ($q) use ($category, $tags, $includeDrafts, $userId) {
-                if ($userId) { 
+                if ($userId) {
                     $q->where('created_by', $userId);
                 }
 
-                if (!$includeDrafts) {
+                if (! $includeDrafts) {
                     $q->published();
                 }
 
@@ -83,13 +95,13 @@ class KnowledgeSearchService
         $q = KnowledgeChunk::query()
             ->select('knowledge_chunks.id')
             ->join('knowledge_items', 'knowledge_items.id', '=', 'knowledge_chunks.knowledge_item_id')
-            ->whereRaw("knowledge_chunks.chunk_tsv @@ websearch_to_tsquery(?, ?)", [$fts, $query]);
+            ->whereRaw('knowledge_chunks.chunk_tsv @@ websearch_to_tsquery(?, ?)', [$fts, $query]);
 
         if ($userId) {
             $q->where('knowledge_items.created_by', $userId);
         }
-        
-        if (!$includeDrafts) {
+
+        if (! $includeDrafts) {
             $q->where('knowledge_items.status', 'published')
                 ->where(function ($w) {
                     $w->whereNull('knowledge_items.published_at')->orWhere('knowledge_items.published_at', '<=', now());
@@ -104,7 +116,7 @@ class KnowledgeSearchService
             $q->whereJsonContains('knowledge_items.tags', $tag);
         }
 
-        return $q->orderByRaw("ts_rank_cd(knowledge_chunks.chunk_tsv, websearch_to_tsquery(?, ?)) DESC", [$fts, $query])
+        return $q->orderByRaw('ts_rank_cd(knowledge_chunks.chunk_tsv, websearch_to_tsquery(?, ?)) DESC', [$fts, $query])
             ->limit($k)
             ->pluck('knowledge_chunks.id')
             ->all();
@@ -133,13 +145,17 @@ class KnowledgeSearchService
             return $chunks;
         }
 
+        if (! $this->shouldUseAiRerank()) {
+            return $chunks->take($limit)->values();
+        }
+
         $docs = $chunks->map(function ($c) {
             $title = $c->item?->title ?? '';
             $cat = $c->item?->category ?? '';
             $meta = is_array($c->meta) ? $c->meta : [];
             $heading = '';
 
-            if (!empty($meta['heading_path']) && is_array($meta['heading_path'])) {
+            if (! empty($meta['heading_path']) && is_array($meta['heading_path'])) {
                 $heading = implode(' > ', $meta['heading_path']);
             }
 
@@ -148,18 +164,18 @@ class KnowledgeSearchService
                 $p .= "\nSection: {$heading}";
             }
 
-            if (!empty($meta['filename'])) {
+            if (! empty($meta['filename'])) {
                 $p .= "\nFile: {$meta['filename']}";
             }
 
-            return trim($p . "\n\n" . $c->chunk_text);
+            return trim($p."\n\n".$c->chunk_text);
         })->all();
 
         try {
             $ranked = Reranking::of($docs)->limit($limit)->rerank($query);
-        } catch (RequestException) {
+        } catch (\Throwable) {
             // Fallback to fused ranking order when reranking provider credentials are missing.
-            return $chunks->values();
+            return $chunks->take($limit)->values();
         }
 
         return collect($ranked->all())
@@ -167,15 +183,35 @@ class KnowledgeSearchService
                 'index' => (int) $r->index,
                 'score' => (float) $r->score,
             ])
-            ->map(function ($r) use ($chunks) {
-                $c = $chunks[$r['index']] ?? null;
+            ->sortByDesc('score')
+            ->values()
+            ->map(function ($r, $rank) use ($chunks) {
+                $c = $chunks->get($r['index']);
                 if ($c) {
                     $c->rerank_score = $r['score'];
+                    $c->rerank_rank = (int) $rank;
                 }
+
                 return $c;
             })
             ->filter()
             ->values();
+    }
+
+    private function shouldUseAiRerank(): bool
+    {
+        if (! (bool) config('knowledge.hybrid.enable_ai_rerank')) {
+            return false;
+        }
+
+        $provider = config('ai.default_for_reranking');
+        if (! is_string($provider) || $provider === '') {
+            return false;
+        }
+
+        $providerKey = config("ai.providers.{$provider}.key");
+
+        return is_string($providerKey) && trim($providerKey) !== '';
     }
 
     private function assemble(Collection $chunks, int $limit): array
@@ -190,13 +226,15 @@ class KnowledgeSearchService
 
         foreach ($chunks as $chunk) {
             $item = $chunk->item;
-            if (!$item) {
+            if (! $item) {
                 continue;
             }
 
             $id = $item->id;
 
-            if (!isset($byItem[$id])) {
+            if (! isset($byItem[$id])) {
+                $updatedAt = $item->updated_at;
+
                 $byItem[$id] = [
                     'item' => [
                         'id' => $item->id,
@@ -204,7 +242,7 @@ class KnowledgeSearchService
                         'title' => $item->title,
                         'category' => $item->category,
                         'tags' => $item->tags ?? [],
-                        'updated_at' => (string) $item->updated_at,
+                        'updated_at' => $updatedAt ? $updatedAt->clone()->utc()->toIso8601String() : null,
                     ],
                     'snippets' => [],
                     'code_examples' => [],
@@ -216,14 +254,20 @@ class KnowledgeSearchService
                 continue;
             }
 
+            $rerankScore = $chunk->getAttribute('rerank_score');
+            $rerankRank = $chunk->getAttribute('rerank_rank');
+            $fusedRank = $chunk->getAttribute('fused_rank');
+
             $byItem[$id]['snippets'][] = [
                 'source_type' => $chunk->source_type,
                 'source_id' => $chunk->source_id,
                 'chunk_kind' => $chunk->chunk_kind,
                 'chunk_index' => $chunk->chunk_index,
                 'meta' => $chunk->meta ?? [],
-                'score' => property_exists($chunk, 'rerank_score') ? $chunk->rerank_score : null,
+                'score' => is_numeric($rerankScore) ? (float) $rerankScore : null,
                 'text' => $chunk->chunk_text,
+                '_fused_rank' => is_numeric($fusedRank) ? (int) $fusedRank : PHP_INT_MAX,
+                '_rerank_rank' => is_numeric($rerankRank) ? (int) $rerankRank : null,
             ];
 
             if ($chunk->source_type === 'code' && $chunk->source_id) {
@@ -246,6 +290,38 @@ class KnowledgeSearchService
             ->keyBy('id');
 
         foreach ($byItem as &$row) {
+            $row['snippets'] = collect($row['snippets'])
+                ->sort(function (array $a, array $b): int {
+                    $aHasScore = $a['score'] !== null;
+                    $bHasScore = $b['score'] !== null;
+
+                    if ($aHasScore !== $bHasScore) {
+                        return $aHasScore ? -1 : 1;
+                    }
+
+                    if ($aHasScore && $bHasScore) {
+                        if ($a['score'] !== $b['score']) {
+                            return $a['score'] < $b['score'] ? 1 : -1;
+                        }
+
+                        $aRerank = $a['_rerank_rank'] ?? PHP_INT_MAX;
+                        $bRerank = $b['_rerank_rank'] ?? PHP_INT_MAX;
+
+                        if ($aRerank !== $bRerank) {
+                            return $aRerank <=> $bRerank;
+                        }
+                    }
+
+                    return $a['_fused_rank'] <=> $b['_fused_rank'];
+                })
+                ->map(function (array $snippet): array {
+                    unset($snippet['_fused_rank'], $snippet['_rerank_rank']);
+
+                    return $snippet;
+                })
+                ->values()
+                ->all();
+
             $snips = $row['snippets'];
 
             $row['code_examples'] = collect($snips)
