@@ -12,7 +12,8 @@ use Laravel\Mcp\Server\Tool;
 class SearchKnowledgeBaseTool extends Tool
 {
     protected string $name = 'search_knowledge_base';
-    protected string $description = 'Search the authenticated user’s knowledge base using hybrid retrieval.';
+
+    protected string $description = 'Search the knowledge base using hybrid retrieval.';
 
     public function schema(JsonSchema $schema): array
     {
@@ -43,7 +44,7 @@ class SearchKnowledgeBaseTool extends Tool
             'title' => $schema->string()->required(),
             'category' => $schema->string()->nullable()->required(),
             'tags' => $schema->array()->items($schema->string())->required(),
-            'updated_at' => $schema->string()->required(),
+            'updated_at' => $schema->string()->format('date-time')->required(),
         ])->withoutAdditionalProperties();
 
         $codeSchema = $schema->object([
@@ -78,11 +79,16 @@ class SearchKnowledgeBaseTool extends Tool
 
     public function handle(Request $request, KnowledgeSearchService $search): Response|ResponseFactory
     {
-        $user = $request->user();
+        $authenticatedUser = $request->user();
+        $requireAuth = (bool) config('knowledge.mcp.require_auth');
 
-        if (! $user) {
+        if ($requireAuth && ! $authenticatedUser) {
             return Response::error('Unauthorized.');
         }
+
+        $userId = $authenticatedUser
+            ? (int) $authenticatedUser->id
+            : $this->resolveDefaultUserId();
 
         $query = (string) $request->get('query', '');
         $limit = $request->integer('limit', 5);
@@ -96,9 +102,16 @@ class SearchKnowledgeBaseTool extends Tool
             category: is_string($category) ? $category : null,
             tags: $tags,
             includeDrafts: $includeDrafts,
-            userId: (int) $user->id
+            userId: $userId
         );
 
         return Response::structured(['results' => $results]);
+    }
+
+    private function resolveDefaultUserId(): ?int
+    {
+        $defaultUserId = config('knowledge.mcp.default_user_id');
+
+        return is_numeric($defaultUserId) ? (int) $defaultUserId : null;
     }
 }

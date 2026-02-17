@@ -3,8 +3,9 @@
 namespace App\Mcp\Tools;
 
 use App\Models\KnowledgeItem;
-use Illuminate\Support\Str;
+use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Str;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -13,7 +14,8 @@ use Laravel\Mcp\Server\Tool;
 class CreateKnowledgeEntryTool extends Tool
 {
     protected string $name = 'create_knowledge_entry';
-    protected string $description = 'Create a draft knowledge item for the authenticated user.';
+
+    protected string $description = 'Create a draft knowledge item.';
 
     public function schema(JsonSchema $schema): array
     {
@@ -49,14 +51,15 @@ class CreateKnowledgeEntryTool extends Tool
         $slug = $slugBase;
         $i = 2;
 
-        $user = $request->user();
+        $userId = $this->resolveUserId($request);
+        $requireAuth = (bool) config('knowledge.mcp.require_auth');
 
-        if (! $user) {
-            return Response::error('Unauthorized.');
+        if (($requireAuth && ! $request->user()) || ! $userId) {
+            return Response::error('Unauthorized. Configure KB_MCP_DEFAULT_USER_ID or use Sanctum auth.');
         }
 
         while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
-            $slug = $slugBase . '-' . $i;
+            $slug = $slugBase.'-'.$i;
             $i++;
         }
 
@@ -68,7 +71,7 @@ class CreateKnowledgeEntryTool extends Tool
             'tags' => $tags,
             'source' => 'ai',
             'status' => 'draft',
-            'created_by' => $user->id,
+            'created_by' => $userId,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
             'embedding_dimensions' => (int) config('knowledge.defaults.embedding_dimensions'),
@@ -79,5 +82,21 @@ class CreateKnowledgeEntryTool extends Tool
             'slug' => $item->slug,
             'status' => $item->status,
         ]);
+    }
+
+    private function resolveUserId(Request $request): ?int
+    {
+        if ($user = $request->user()) {
+            return (int) $user->id;
+        }
+
+        $defaultUserId = config('knowledge.mcp.default_user_id');
+        if (! is_numeric($defaultUserId)) {
+            return null;
+        }
+
+        $id = (int) $defaultUserId;
+
+        return User::query()->whereKey($id)->exists() ? $id : null;
     }
 }
