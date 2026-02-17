@@ -8,24 +8,62 @@ use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
+use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
+use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
+#[IsReadOnly]
+#[IsIdempotent]
 class SearchKnowledgeBaseTool extends Tool
 {
+    /**
+     * The tool's name.
+     */
     protected string $name = 'search_knowledge_base';
 
+    /**
+     * The tool's description.
+     */
     protected string $description = 'Search the knowledge base using hybrid retrieval.';
 
+    /**
+     * Get the tool's input schema.
+     *
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->min(1)->required(),
-            'limit' => $schema->integer()->min(1)->max(10)->default(5),
-            'category' => $schema->string()->nullable(),
-            'tags' => $schema->array()->items($schema->string())->default([]),
-            'include_drafts' => $schema->boolean()->default(false),
+            'query' => $schema->string()
+                ->min(1)
+                ->description('User query text.')
+                ->required(),
+
+            'limit' => $schema->integer()
+                ->min(1)
+                ->max(10)
+                ->description('Max number of items to return.')
+                ->default(5),
+
+            'category' => $schema->string()
+                ->description('Optional category filter.')
+                ->nullable(),
+
+            'tags' => $schema->array()
+                ->items($schema->string())
+                ->description('Optional tags filter (AND semantics).')
+                ->default([]),
+
+            'include_drafts' => $schema->boolean()
+                ->description('Include draft/unpublished items (only relevant for authenticated or default user scope).')
+                ->default(false),
         ];
     }
 
+    /**
+     * Get the tool's output schema.
+     *
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
     public function outputSchema(JsonSchema $schema): array
     {
         $snippetSchema = $schema->object([
@@ -77,6 +115,10 @@ class SearchKnowledgeBaseTool extends Tool
         ];
     }
 
+    /**
+     * Handle the tool request.
+     * Enforces optional auth and scopes search to the acting user (auth user or configured default).
+     */
     public function handle(Request $request, KnowledgeSearchService $search): Response|ResponseFactory
     {
         $authenticatedUser = $request->user();
@@ -93,7 +135,7 @@ class SearchKnowledgeBaseTool extends Tool
         $query = (string) $request->get('query', '');
         $limit = $request->integer('limit', 5);
         $category = $request->get('category');
-        $tags = array_values(array_filter($request->array('tags'), is_string(...)));
+        $tags = array_values(array_filter($request->array('tags'), fn ($tag) => is_string($tag) && trim($tag) !== ''));
         $includeDrafts = $request->boolean('include_drafts');
 
         $results = $search->search(
@@ -108,6 +150,9 @@ class SearchKnowledgeBaseTool extends Tool
         return Response::structured(['results' => $results]);
     }
 
+    /**
+     * Resolve default user scope for unauthenticated MCP requests.
+     */
     private function resolveDefaultUserId(): ?int
     {
         $defaultUserId = config('knowledge.mcp.default_user_id');

@@ -10,6 +10,9 @@ use Illuminate\Database\Seeder;
 
 class KnowledgeDemoSeeder extends Seeder
 {
+    /**
+     * Seed the knowledge base database.
+     */
     public function run(): void
     {
         $user = User::query()->where('email', 'test@example.com')->first()
