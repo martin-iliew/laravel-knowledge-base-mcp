@@ -13,29 +13,72 @@ use Laravel\Mcp\Server\Tool;
 
 class CreateKnowledgeEntryTool extends Tool
 {
+    /**
+     * The tool's name.
+     */
     protected string $name = 'create_knowledge_entry';
 
+    /**
+     * The tool's description.
+     */
     protected string $description = 'Create a draft knowledge item.';
 
+    /**
+     * Get the tool's input schema.
+     *
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
     public function schema(JsonSchema $schema): array
     {
         return [
-            'title' => $schema->string()->min(1)->required(),
-            'content_markdown' => $schema->string()->min(1)->required(),
-            'category' => $schema->string()->nullable(),
-            'tags' => $schema->array()->items($schema->string())->default([]),
+            'title' => $schema->string()
+                ->min(1)
+                ->description('Knowledge item title.')
+                ->required(),
+
+            'content_markdown' => $schema->string()
+                ->min(1)
+                ->description('Markdown body for the knowledge item.')
+                ->required(),
+
+            'category' => $schema->string()
+                ->description('Optional category for filtering.')
+                ->nullable(),
+
+            'tags' => $schema->array()
+                ->items($schema->string())
+                ->description('Optional tags (AND semantics in retrieval).')
+                ->default([]),
         ];
     }
 
+    /**
+     * Get the tool's output schema.
+     *
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
     public function outputSchema(JsonSchema $schema): array
     {
         return [
-            'id' => $schema->integer()->required(),
-            'slug' => $schema->string()->required(),
-            'status' => $schema->string()->enum(['draft'])->required(),
+            'id' => $schema->integer()
+                ->description('Created knowledge item ID.')
+                ->required(),
+
+            'slug' => $schema->string()
+                ->description('Final unique slug.')
+                ->required(),
+
+            'status' => $schema->string()
+                ->enum(['draft'])
+                ->description('Always "draft" on creation.')
+                ->required(),
         ];
     }
 
+    /**
+     * Handle the tool request.
+     * Creates a draft KnowledgeItem scoped to the authenticated user or a configured default user.
+     */
     public function handle(Request $request): Response|ResponseFactory
     {
         $title = (string) $request->get('title', '');
@@ -84,6 +127,9 @@ class CreateKnowledgeEntryTool extends Tool
         ]);
     }
 
+    /**
+     * Resolve the acting user ID from the authenticated request user or the configured default.
+     */
     private function resolveUserId(Request $request): ?int
     {
         if ($user = $request->user()) {
