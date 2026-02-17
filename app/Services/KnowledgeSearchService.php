@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CodeExample;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeResource;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Reranking;
 
@@ -154,7 +155,12 @@ class KnowledgeSearchService
             return trim($p . "\n\n" . $c->chunk_text);
         })->all();
 
-        $ranked = Reranking::of($docs)->limit($limit)->rerank($query);
+        try {
+            $ranked = Reranking::of($docs)->limit($limit)->rerank($query);
+        } catch (RequestException) {
+            // Fallback to fused ranking order when reranking provider credentials are missing.
+            return $chunks->values();
+        }
 
         return collect($ranked->all())
             ->map(fn ($r) => [

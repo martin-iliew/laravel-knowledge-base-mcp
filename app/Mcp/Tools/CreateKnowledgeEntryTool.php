@@ -4,48 +4,54 @@ namespace App\Mcp\Tools;
 
 use App\Models\KnowledgeItem;
 use Illuminate\Support\Str;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Mcp\Request;
+use Laravel\Mcp\Response;
+use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
-use Laravel\Mcp\Server\Request;
-use Laravel\Mcp\Server\Response;
-use Laravel\Mcp\Server\Schemas\JsonSchema;
 
 class CreateKnowledgeEntryTool extends Tool
 {
-    protected string $name = 'create-knowledge-entry';
+    protected string $name = 'create_knowledge_entry';
     protected string $description = 'Create a draft knowledge item for the authenticated user.';
-    
+
     public function schema(JsonSchema $schema): array
     {
-        return $schema->object([
-            'title' => $schema->string()->minLength(1),
-            'content_markdown' => $schema->string()->minLength(1),
+        return [
+            'title' => $schema->string()->min(1)->required(),
+            'content_markdown' => $schema->string()->min(1)->required(),
             'category' => $schema->string()->nullable(),
-            'tags' => $schema->array($schema->string())->default([]),
-        ]);
+            'tags' => $schema->array()->items($schema->string())->default([]),
+        ];
     }
 
     public function outputSchema(JsonSchema $schema): array
     {
-        return $schema->object([
-            'id' => $schema->integer(),
-            'slug' => $schema->string(),
-            'status' => $schema->string(),
-        ]);
+        return [
+            'id' => $schema->integer()->required(),
+            'slug' => $schema->string()->required(),
+            'status' => $schema->string()->enum(['draft'])->required(),
+        ];
     }
 
-    public function handle(Request $request): Response
+    public function handle(Request $request): Response|ResponseFactory
     {
-        $title = (string) $request->input('title');
-        $content = (string) $request->input('content_markdown');
-        $category = $request->input('category');
-        $tags = (array) $request->input('tags', []);
+        $title = (string) $request->get('title', '');
+        $content = (string) $request->get('content_markdown', '');
+        $category = $request->get('category');
+        $tags = array_values(array_filter($request->array('tags'), is_string(...)));
 
         $slugBase = Str::slug($title);
+        if ($slugBase === '') {
+            $slugBase = 'knowledge-entry';
+        }
+
         $slug = $slugBase;
         $i = 2;
 
-        $user = $request->user(); 
-        if (! $user) { 
+        $user = $request->user();
+
+        if (! $user) {
             return Response::error('Unauthorized.');
         }
 
