@@ -51,6 +51,7 @@ class FortifyServiceProvider extends ServiceProvider
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
             'canRegister' => Features::enabled(Features::registration()),
             'status' => $request->session()->get('status'),
+            'demoAccounts' => $this->demoLoginAccounts(),
         ]));
 
         Fortify::resetPasswordView(fn (Request $request) => Inertia::render('auth/reset-password', [
@@ -71,6 +72,22 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
 
         Fortify::confirmPasswordView(fn () => Inertia::render('auth/confirm-password'));
+    }
+
+    /**
+     * @return array<int, array{key: string, name: string, email: string, password: string}>
+     */
+    private function demoLoginAccounts(): array
+    {
+        return [
+            ['key' => 'owner', 'name' => 'Main Owner', 'email' => 'owner@acme.test', 'password' => 'password'],
+            ['key' => 'manager', 'name' => 'Engineering Manager', 'email' => 'manager@acme.test', 'password' => 'password'],
+            ['key' => 'support', 'name' => 'Support Lead', 'email' => 'support@acme.test', 'password' => 'password'],
+            ['key' => 'security', 'name' => 'Security Analyst', 'email' => 'security@acme.test', 'password' => 'password'],
+            ['key' => 'finance', 'name' => 'Finance Lead', 'email' => 'finance@acme.test', 'password' => 'password'],
+            ['key' => 'viewer', 'name' => 'Read Only User', 'email' => 'viewer@acme.test', 'password' => 'password'],
+            ['key' => 'legacy', 'name' => 'Test User', 'email' => 'test@example.com', 'password' => 'password'],
+        ];
     }
 
     /**

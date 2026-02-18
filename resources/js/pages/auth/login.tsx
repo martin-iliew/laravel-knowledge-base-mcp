@@ -1,7 +1,8 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, Link } from '@inertiajs/react';
 import InputError from '@/components/input-error';
 import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,12 +16,19 @@ type Props = {
     status?: string;
     canResetPassword: boolean;
     canRegister: boolean;
+    demoAccounts: Array<{
+        key: string;
+        name: string;
+        email: string;
+        password: string;
+    }>;
 };
 
 export default function Login({
     status,
     canResetPassword,
     canRegister,
+    demoAccounts,
 }: Props) {
     return (
         <AuthLayout
@@ -109,6 +117,48 @@ export default function Login({
                     </>
                 )}
             </Form>
+
+            {demoAccounts.length > 0 && (
+                <Card className="border-dashed">
+                    <CardHeader className="space-y-1 pb-4">
+                        <CardTitle className="text-base">
+                            Quick demo login
+                        </CardTitle>
+                        <CardDescription>
+                            Sign in with a seeded account in one click. All
+                            demo accounts use{' '}
+                            <span className="font-mono text-foreground">
+                                password
+                            </span>
+                            .
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-2">
+                        {demoAccounts.map((account) => (
+                            <Link
+                                key={account.key}
+                                href={store()}
+                                method="post"
+                                as="button"
+                                data={{
+                                    email: account.email,
+                                    password: account.password,
+                                    remember: true,
+                                }}
+                                className="flex w-full items-center justify-between gap-3 rounded-md border border-input bg-background px-3 py-2 text-left text-sm shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+                                data-test={`demo-login-${account.key}`}
+                            >
+                                <span className="font-medium">
+                                    {account.name}
+                                </span>
+                                <span className="truncate text-xs text-muted-foreground">
+                                    {account.email}
+                                </span>
+                            </Link>
+                        ))}
+                    </CardContent>
+                </Card>
+            )}
 
             {status && (
                 <div className="mb-4 text-center text-sm font-medium text-green-600">
