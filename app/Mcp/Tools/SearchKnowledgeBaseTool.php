@@ -123,10 +123,17 @@ class SearchKnowledgeBaseTool extends Tool
     {
         $authenticatedUser = $request->user();
         $requireAuth = (bool) config('knowledge.mcp.require_auth');
+        $authenticatedUser = $request->user();
+        $requireAuth = (bool) config('knowledge.mcp.require_auth');
 
+        if ($requireAuth && ! $authenticatedUser) {
         if ($requireAuth && ! $authenticatedUser) {
             return Response::error('Unauthorized.');
         }
+
+        $userId = $authenticatedUser
+            ? (int) $authenticatedUser->id
+            : $this->resolveDefaultUserId();
 
         $userId = $authenticatedUser
             ? (int) $authenticatedUser->id
@@ -144,6 +151,7 @@ class SearchKnowledgeBaseTool extends Tool
             category: is_string($category) ? $category : null,
             tags: $tags,
             includeDrafts: $includeDrafts,
+            userId: $userId
             userId: $userId
         );
 

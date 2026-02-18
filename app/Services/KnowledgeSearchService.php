@@ -113,9 +113,11 @@ class KnowledgeSearchService
             ->select(['knowledge_chunks.id'])
             ->whereHas('item', function ($q) use ($category, $tags, $includeDrafts, $userId) {
                 if ($userId) {
+                if ($userId) {
                     $q->where('created_by', $userId);
                 }
 
+                if (! $includeDrafts) {
                 if (! $includeDrafts) {
                     $q->published();
                 }
@@ -159,10 +161,13 @@ class KnowledgeSearchService
             ->select('knowledge_chunks.id')
             ->join('knowledge_items', 'knowledge_items.id', '=', 'knowledge_chunks.knowledge_item_id')
             ->whereRaw('knowledge_chunks.chunk_tsv @@ websearch_to_tsquery(?, ?)', [$fts, $query]);
+            ->whereRaw('knowledge_chunks.chunk_tsv @@ websearch_to_tsquery(?, ?)', [$fts, $query]);
 
         if ($userId) {
             $q->where('knowledge_items.created_by', $userId);
         }
+
+        if (! $includeDrafts) {
 
         if (! $includeDrafts) {
             $q->where('knowledge_items.status', 'published')
@@ -263,12 +268,18 @@ class KnowledgeSearchService
             return $chunks->take($limit)->values();
         }
 
+        if (! $this->shouldUseAiRerank()) {
+            return $chunks->take($limit)->values();
+        }
+
         $docs = $chunks->map(fn ($c) => $this->buildRerankDocument($c))->all();
 
         try {
             $ranked = Reranking::of($docs)->limit($limit)->rerank($query);
         } catch (\Throwable) {
+        } catch (\Throwable) {
             // Fallback to fused ranking order when reranking provider credentials are missing.
+            return $chunks->take($limit)->values();
             return $chunks->take($limit)->values();
         }
 
@@ -285,6 +296,7 @@ class KnowledgeSearchService
                     $c->rerank_score = $r['score'];
                     $c->rerank_rank = (int) $rank;
                 }
+
 
                 return $c;
             })
@@ -369,6 +381,7 @@ class KnowledgeSearchService
 
         foreach ($chunks as $chunk) {
             $item = $chunk->item;
+            if (! $item) {
             if (! $item) {
                 continue;
             }

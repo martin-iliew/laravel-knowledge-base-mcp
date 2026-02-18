@@ -4,7 +4,9 @@ namespace App\Mcp\Tools;
 
 use App\Models\KnowledgeItem;
 use App\Models\User;
+use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Str;
 use Illuminate\Support\Str;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -96,12 +98,17 @@ class CreateKnowledgeEntryTool extends Tool
 
         $userId = $this->resolveUserId($request);
         $requireAuth = (bool) config('knowledge.mcp.require_auth');
+        $userId = $this->resolveUserId($request);
+        $requireAuth = (bool) config('knowledge.mcp.require_auth');
 
+        if (($requireAuth && ! $request->user()) || ! $userId) {
+            return Response::error('Unauthorized. Configure KB_MCP_DEFAULT_USER_ID or use Sanctum auth.');
         if (($requireAuth && ! $request->user()) || ! $userId) {
             return Response::error('Unauthorized. Configure KB_MCP_DEFAULT_USER_ID or use Sanctum auth.');
         }
 
         while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
+            $slug = $slugBase.'-'.$i;
             $slug = $slugBase.'-'.$i;
             $i++;
         }
@@ -114,6 +121,7 @@ class CreateKnowledgeEntryTool extends Tool
             'tags' => $tags,
             'source' => 'ai',
             'status' => 'draft',
+            'created_by' => $userId,
             'created_by' => $userId,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
