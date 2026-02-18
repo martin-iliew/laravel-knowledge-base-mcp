@@ -47,6 +47,7 @@ return [
         'rrf_k' => (int) env('KB_RRF_K', 60),
         'rerank_k' => (int) env('KB_RERANK_K', 50),
         'enable_ai_rerank' => (bool) env('KB_ENABLE_AI_RERANK', false),
+        'enable_ai_rerank' => (bool) env('KB_ENABLE_AI_RERANK', false),
         'fts_config' => (string) env('KB_FTS_CONFIG', 'simple'),
     ],
 
