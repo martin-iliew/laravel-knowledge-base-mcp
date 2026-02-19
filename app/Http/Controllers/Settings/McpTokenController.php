@@ -62,9 +62,10 @@ class McpTokenController extends Controller
     public function destroy(Request $request, PersonalAccessToken $token): RedirectResponse
     {
         $currentUser = $request->user();
+        $currentUserMorphClass = $currentUser->getMorphClass();
 
         abort_unless(
-            (string) $token->tokenable_type === $currentUser::class
+            (string) $token->tokenable_type === $currentUserMorphClass
             && (int) $token->tokenable_id === (int) $currentUser->id,
             403
         );

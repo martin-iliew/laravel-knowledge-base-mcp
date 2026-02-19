@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools;
 
+use App\Models\KnowledgeItem;
 use App\Services\KnowledgeSearchService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -54,7 +55,7 @@ class SearchKnowledgeBaseTool extends Tool
                 ->default([]),
 
             'include_drafts' => $schema->boolean()
-                ->description('Include draft/unpublished items (only relevant for authenticated or default user scope).')
+                ->description('Include draft/unpublished items (for authorized scope).')
                 ->default(false),
         ];
     }
@@ -117,16 +118,12 @@ class SearchKnowledgeBaseTool extends Tool
 
     /**
      * Handle the tool request.
-     * Enforces optional auth and scopes search to the acting user (auth user or configured default).
      */
     public function handle(Request $request, KnowledgeSearchService $search): Response|ResponseFactory
     {
         $authenticatedUser = $request->user();
         $requireAuth = (bool) config('knowledge.mcp.require_auth');
-        $authenticatedUser = $request->user();
-        $requireAuth = (bool) config('knowledge.mcp.require_auth');
 
-        if ($requireAuth && ! $authenticatedUser) {
         if ($requireAuth && ! $authenticatedUser) {
             return Response::error('Unauthorized.');
         }
@@ -135,14 +132,13 @@ class SearchKnowledgeBaseTool extends Tool
             ? (int) $authenticatedUser->id
             : $this->resolveDefaultUserId();
 
-        $userId = $authenticatedUser
-            ? (int) $authenticatedUser->id
-            : $this->resolveDefaultUserId();
-
         $query = (string) $request->get('query', '');
         $limit = $request->integer('limit', 5);
         $category = $request->get('category');
-        $tags = array_values(array_filter($request->array('tags'), fn ($tag) => is_string($tag) && trim($tag) !== ''));
+        $tags = array_values(array_filter(
+            $request->array('tags'),
+            fn ($tag): bool => is_string($tag) && trim($tag) !== ''
+        ));
         $includeDrafts = $request->boolean('include_drafts');
 
         $results = $search->search(
@@ -151,8 +147,7 @@ class SearchKnowledgeBaseTool extends Tool
             category: is_string($category) ? $category : null,
             tags: $tags,
             includeDrafts: $includeDrafts,
-            userId: $userId
-            userId: $userId
+            userId: $userId,
         );
 
         return Response::structured(['results' => $results]);
@@ -165,6 +160,21 @@ class SearchKnowledgeBaseTool extends Tool
     {
         $defaultUserId = config('knowledge.mcp.default_user_id');
 
-        return is_numeric($defaultUserId) ? (int) $defaultUserId : null;
+        if (is_numeric($defaultUserId)) {
+            $candidate = (int) $defaultUserId;
+
+            if ($candidate > 0) {
+                return $candidate;
+            }
+        }
+
+        $ownerUserId = KnowledgeItem::query()
+            ->select('created_by')
+            ->selectRaw('count(*) as total_items')
+            ->groupBy('created_by')
+            ->orderByDesc('total_items')
+            ->value('created_by');
+
+        return is_numeric($ownerUserId) ? (int) $ownerUserId : null;
     }
 }

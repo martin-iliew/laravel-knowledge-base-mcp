@@ -14,7 +14,7 @@ class KnowledgeSearchEvaluateCommand extends Command
      * @var string
      */
     protected $signature = 'knowledge:search-eval
-        {--user-id= : User ID for scoped evaluation}
+        {--user-id= : User ID for scoped evaluation (omit for global corpus)}
         {--limit=10 : Result depth for MRR@k}
         {--show-failures=10 : Number of failing queries to print}';
 
@@ -23,14 +23,15 @@ class KnowledgeSearchEvaluateCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Evaluate KB search before/after search_v2 flag with zero-results and MRR@k metrics.';
+    protected $description = 'Evaluate KB search quality (zero-results + MRR@k) before/after search_v2.';
 
     /**
      * Execute the console command.
      */
     public function handle(): int
     {
-        $userId = (int) ($this->option('user-id') ?: config('knowledge.mcp.default_user_id', 1));
+        $userIdOption = $this->option('user-id');
+        $userId = is_numeric($userIdOption) ? (int) $userIdOption : null;
         $limit = max(1, min((int) $this->option('limit'), 20));
         $showFailures = max(1, min((int) $this->option('show-failures'), 20));
 
@@ -41,7 +42,8 @@ class KnowledgeSearchEvaluateCommand extends Command
         $before = $this->evaluate($service, $queries, $userId, $limit, false);
         $after = $this->evaluate($service, $queries, $userId, $limit, true);
 
-        $this->info("User scope: {$userId}");
+        $scopeLabel = $userId === null ? 'global (all accessible owners)' : "user {$userId}";
+        $this->info("Scope: {$scopeLabel}");
         $this->line('Dataset size: '.count($queries).' queries');
 
         $this->table(
@@ -76,7 +78,7 @@ class KnowledgeSearchEvaluateCommand extends Command
     private function evaluate(
         KnowledgeSearchService $service,
         array $queries,
-        int $userId,
+        ?int $userId,
         int $limit,
         bool $v2Enabled
     ): array {
@@ -169,12 +171,14 @@ class KnowledgeSearchEvaluateCommand extends Command
     private function querySet(): array
     {
         $stripe = 'integrations-payments-stripe-checkout-fulfillment-webhook';
+        $stripePortal = 'integrations-payments-stripe-customer-portal-session';
+        $stripePaymentIntents = 'integrations-payments-stripe-payment-intents-payment-element';
         $speedy = 'integrations-shipping-speedy-rest-create-shipment-print-label';
         $tbi = 'integrations-financing-tbi-bnpl-authorize-application-status-callback';
-        $embeddings = 'ai-embeddings-laravel-ai-sdk-pgvector-wherevectorsimilarto';
+        $embeddings = 'ai-embeddings-laravel-ai-sdk-generate-store-query';
 
         return [
-            ['bucket' => '1-word', 'query' => 'stripe', 'expected_slugs' => [$stripe]],
+            ['bucket' => '1-word', 'query' => 'stripe', 'expected_slugs' => [$stripe, $stripePortal, $stripePaymentIntents]],
             ['bucket' => '1-word', 'query' => 'checkout', 'expected_slugs' => [$stripe]],
             ['bucket' => '1-word', 'query' => 'webhook', 'expected_slugs' => [$stripe, $tbi]],
             ['bucket' => '1-word', 'query' => 'idempotent', 'expected_slugs' => [$stripe]],
@@ -222,7 +226,15 @@ class KnowledgeSearchEvaluateCommand extends Command
             ['bucket' => 'ids/acronyms', 'query' => 'tbi-apim.azure-api.net', 'expected_slugs' => [$tbi]],
             ['bucket' => 'ids/acronyms', 'query' => 'services.speedy.bg', 'expected_slugs' => [$speedy]],
 
-            ['bucket' => 'typos', 'query' => 'strpie', 'expected_slugs' => [$stripe]],
+            ['bucket' => 'casing/punctuation', 'query' => 'STRIPE, WEBHOOK!', 'expected_slugs' => [$stripe]],
+            ['bucket' => 'casing/punctuation', 'query' => 'Speedy REST API?', 'expected_slugs' => [$speedy]],
+            ['bucket' => 'casing/punctuation', 'query' => 'TBI - callback status', 'expected_slugs' => [$tbi]],
+
+            ['bucket' => 'quoted phrase', 'query' => '"checkout session"', 'expected_slugs' => [$stripe]],
+            ['bucket' => 'quoted phrase', 'query' => '"print label"', 'expected_slugs' => [$speedy]],
+            ['bucket' => 'quoted phrase', 'query' => '"application status callback"', 'expected_slugs' => [$tbi]],
+
+            ['bucket' => 'typos', 'query' => 'strpie', 'expected_slugs' => [$stripe, $stripePortal, $stripePaymentIntents]],
             ['bucket' => 'typos', 'query' => 'checokut', 'expected_slugs' => [$stripe]],
             ['bucket' => 'typos', 'query' => 'webhok', 'expected_slugs' => [$stripe]],
             ['bucket' => 'typos', 'query' => 'speady', 'expected_slugs' => [$speedy]],

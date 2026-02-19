@@ -7,6 +7,7 @@ use App\Http\Requests\Knowledge\KnowledgeSearchRequest;
 use App\Models\KnowledgeItem;
 use App\Models\User;
 use App\Services\KnowledgeSearchService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -29,7 +30,7 @@ class KnowledgeBaseController extends Controller
         $query = trim((string) ($validated['query'] ?? ''));
         $category = $this->normalizeOptionalString($validated['category'] ?? null);
         $tags = $this->normalizeTagsFromInput((string) ($validated['tags'] ?? ''));
-        $includeDrafts = $request->boolean('include_drafts', false);
+        $includeDrafts = $request->boolean('include_drafts', true);
         $limit = max(1, min((int) ($validated['limit'] ?? 5), 10));
 
         $results = [];
@@ -45,11 +46,20 @@ class KnowledgeBaseController extends Controller
             );
         }
 
-        $latestItems = KnowledgeItem::query()
+        $latestItemsQuery = KnowledgeItem::query()
             ->accessibleTo($user)
-            ->select(['id', 'title', 'slug', 'category', 'tags', 'status', 'updated_at', 'published_at'])
+            ->select(['id', 'title', 'slug', 'category', 'tags', 'status', 'updated_at', 'published_at']);
+
+        $this->applyArticleFilters(
+            query: $latestItemsQuery,
+            category: $category,
+            tags: $tags,
+            includeDrafts: $includeDrafts
+        );
+
+        $latestItems = $latestItemsQuery
             ->latest('updated_at')
-            ->limit(12)
+            ->orderByDesc('id')
             ->get();
 
         $categoryTree = $this->buildCategoryTree(
@@ -87,6 +97,34 @@ class KnowledgeBaseController extends Controller
                 ->values(),
             'categoryTree' => $categoryTree->values(),
         ]);
+    }
+
+    /**
+     * Apply list-level filters to knowledge item queries.
+     *
+     * @param  array<int, string>  $tags
+     */
+    private function applyArticleFilters(
+        Builder $query,
+        ?string $category,
+        array $tags,
+        bool $includeDrafts
+    ): void {
+        if (! $includeDrafts) {
+            $query->where('status', 'published')
+                ->where(function (Builder $publishedQuery): void {
+                    $publishedQuery->whereNull('published_at')
+                        ->orWhere('published_at', '<=', now());
+                });
+        }
+
+        if ($category !== null && $category !== '') {
+            $query->where('category', $category);
+        }
+
+        foreach ($tags as $tag) {
+            $query->whereJsonContains('tags', $tag);
+        }
     }
 
     /**

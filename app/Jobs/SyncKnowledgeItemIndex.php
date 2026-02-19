@@ -31,7 +31,7 @@ use Laravel\Ai\Embeddings;
  * 4) Generate missing embeddings via Laravel AI
  * 5) Atomically replace KnowledgeChunk rows inside a transaction (version-checked)
  */
-class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
+class SyncKnowledgeItemIndex implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -39,7 +39,9 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
      * Retry settings for transient provider/network failures.
      */
     public int $tries = 3;
+
     public int $timeout = 120;
+
     public int $uniqueFor = 3600;
 
     /**
@@ -53,8 +55,8 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
     }
 
     /**
-     * @param int $knowledgeItemId        Target item to (re)index
-     * @param int $expectedIndexVersion   Version gate; only write if item matches this version
+     * @param  int  $knowledgeItemId  Target item to (re)index
+     * @param  int  $expectedIndexVersion  Version gate; only write if item matches this version
      */
     public function __construct(
         public int $knowledgeItemId,
@@ -63,12 +65,10 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
 
     /**
      * Unique key so duplicates of the same item+version don't pile up.
-     *
-     * @return string
      */
     public function uniqueId(): string
     {
-        return $this->knowledgeItemId . ':' . $this->expectedIndexVersion;
+        return $this->knowledgeItemId.':'.$this->expectedIndexVersion;
     }
 
     /**
@@ -194,6 +194,27 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
             return;
         }
 
+        $titleText = (string) $item->title;
+        $categoryText = is_string($item->category) ? $item->category : '';
+        $tagsText = collect(is_array($item->tags) ? $item->tags : [])
+            ->filter(fn ($tag): bool => is_string($tag) && trim($tag) !== '')
+            ->map(fn (string $tag): string => trim($tag))
+            ->implode(' ');
+
+        foreach ($specs as &$spec) {
+            $metaPayload = json_decode((string) ($spec['meta'] ?? ''), true);
+
+            if (! is_array($metaPayload)) {
+                $metaPayload = [];
+            }
+
+            $spec['title_text'] = $titleText;
+            $spec['category_text'] = $categoryText;
+            $spec['tags_text'] = $tagsText;
+            $spec['heading_path_text'] = $this->headingPathTextFromMeta($metaPayload);
+        }
+        unset($spec);
+
         // Used for embedding reuse. If chunk_hash matches and dims match, we keep the previous embedding.
         $chunkHashes = array_values(array_unique(array_map(fn ($s) => $s['chunk_hash'], $specs)));
 
@@ -219,6 +240,7 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
                 $specs[$specIndex]['embedded_at'] = $previous->embedded_at;
                 $specs[$specIndex]['embedding_dimensions'] = (int) $previous->embedding_dimensions;
                 $specs[$specIndex]['embedding_model'] = $previous->embedding_model ? (string) $previous->embedding_model : null;
+
                 continue;
             }
 
@@ -294,26 +316,29 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
     /**
      * Convert a numeric array into a pgvector literal like: [0.1,0.2,0.3]
      *
-     * @param array<int, int|float|string|null> $v
-     * @return string
+     * @param  array<int, int|float|string|null>  $v
      */
     private function vectorLiteral(array $v): string
     {
         $nums = array_map(function ($x) {
-            if ($x === null) return '0';
-            if (is_int($x) || is_float($x)) return (string) $x;
+            if ($x === null) {
+                return '0';
+            }
+            if (is_int($x) || is_float($x)) {
+                return (string) $x;
+            }
+
             return (string) (float) $x;
         }, $v);
 
-        return '[' . implode(',', $nums) . ']';
+        return '['.implode(',', $nums).']';
     }
 
     /**
      * Extract the first non-empty embedding_model seen in inserted rows.
      * Used to persist an item-level model marker for debugging/visibility.
      *
-     * @param array<int, array<string, mixed>> $specs
-     * @return string|null
+     * @param  array<int, array<string, mixed>>  $specs
      */
     private function firstNonEmptyEmbeddingModel(array $specs): ?string
     {
@@ -327,14 +352,27 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
     }
 
     /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function headingPathTextFromMeta(array $meta): string
+    {
+        if (! isset($meta['heading_path']) || ! is_array($meta['heading_path'])) {
+            return '';
+        }
+
+        return collect($meta['heading_path'])
+            ->filter(fn ($heading): bool => is_string($heading) && trim($heading) !== '')
+            ->map(fn (string $heading): string => trim($heading))
+            ->implode(' > ');
+    }
+
+    /**
      * Build a compact item-level header injected as a dedicated chunk and prefix for embeddings.
-     *
-     * @param KnowledgeItem $item
-     * @return string
      */
     private function syntheticHeader(KnowledgeItem $item): string
     {
         $tags = is_array($item->tags) ? implode(', ', $item->tags) : '';
+
         return trim("Title: {$item->title}\nCategory: {$item->category}\nTags: {$tags}");
     }
 
@@ -342,10 +380,7 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
      * Build the embedding text used for vector generation.
      * Adds stable item metadata + optional section/code/resource signals, then the body.
      *
-     * @param KnowledgeItem $item
-     * @param array<string, mixed> $meta
-     * @param string $body
-     * @return string
+     * @param  array<string, mixed>  $meta
      */
     private function contextualEmbedText(KnowledgeItem $item, array $meta, string $body): string
     {
@@ -374,22 +409,14 @@ class SyncKnowledgeItemIndex implements ShouldQueue, ShouldBeUnique
             $prefix .= "\nResource: {$meta['label']}";
         }
 
-        return trim($prefix . "\n\n" . trim($body));
+        return trim($prefix."\n\n".trim($body));
     }
 
     /**
      * Create an insert-ready chunk spec row plus a temporary embed_text field used only for embeddings.
      *
-     * @param int $knowledgeItemId
-     * @param string $sourceType
-     * @param int|null $sourceId
-     * @param int $chunkIndex
-     * @param string $chunkKind
-     * @param string $chunkText
-     * @param array<string, mixed> $meta
-     * @param string $embedText
-     * @param mixed $now
-     * @param int $embeddingDims
+     * @param  array<string, mixed>  $meta
+     * @param  mixed  $now
      * @return array<string, mixed>
      */
     private function makeSpec(

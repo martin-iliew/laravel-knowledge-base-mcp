@@ -7,17 +7,14 @@ use App\Observers\Concerns\KnowledgeIndexingObserverHelpers;
 
 class KnowledgeItemObserver
 {
-    use KnowledgeIndexingObserverHelpers; 
+    use KnowledgeIndexingObserverHelpers;
 
     /**
      * Maintain hashes/defaults and bump index_version when reindex-relevant fields change.
-     *
-     * @param KnowledgeItem $item
-     * @return void
      */
     public function saving(KnowledgeItem $item): void
     {
-        $item->content_hash = $this->sha256Normalized($item->content_markdown ?? ''); 
+        $item->content_hash = $this->sha256Normalized($item->content_markdown ?? '');
 
         if (! $item->chunk_size) {
             $item->chunk_size = (int) config('knowledge.defaults.chunk_size');
@@ -46,16 +43,13 @@ class KnowledgeItemObserver
 
     /**
      * Enqueue indexing only when index_version changed in this save.
-     *
-     * @param KnowledgeItem $item
-     * @return void
      */
     public function saved(KnowledgeItem $item): void
     {
-        if (! $item->wasChanged('index_version')) {
+        if (! $item->wasRecentlyCreated && ! $item->wasChanged('index_version')) {
             return;
         }
 
-        $this->dispatchIndexSync($item->id, (int) $item->index_version); 
+        $this->dispatchIndexSync($item->id, (int) $item->index_version);
     }
 }

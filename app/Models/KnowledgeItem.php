@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class KnowledgeItem extends Model
@@ -51,8 +52,6 @@ class KnowledgeItem extends Model
 
     /**
      * Chunks belonging to this knowledge item.
-     *
-     * @return HasMany
      */
     public function chunks(): HasMany
     {
@@ -61,8 +60,6 @@ class KnowledgeItem extends Model
 
     /**
      * Code examples attached to this knowledge item.
-     *
-     * @return HasMany
      */
     public function codeExamples(): HasMany
     {
@@ -71,8 +68,6 @@ class KnowledgeItem extends Model
 
     /**
      * Resources (links/files) attached to this knowledge item.
-     *
-     * @return HasMany
      */
     public function resources(): HasMany
     {
@@ -80,11 +75,24 @@ class KnowledgeItem extends Model
     }
 
     /**
+     * Owning author account that created this item.
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Reviewer account that approved this item, when present.
+     */
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /**
      * Scope items that are published and visible.
      * Treats null published_at as immediately visible.
-     *
-     * @param Builder $query
-     * @return Builder
      */
     public function scopePublished(Builder $query): Builder
     {
@@ -92,5 +100,20 @@ class KnowledgeItem extends Model
             ->where(function (Builder $query) {
                 $query->whereNull('published_at')->orWhere('published_at', '<=', now());
             });
+    }
+
+    /**
+     * Scope items visible to the given user (owned + account-shared).
+     */
+    public function scopeAccessibleTo(Builder $query, User $user): Builder
+    {
+        return $query->where(function (Builder $accessibleQuery) use ($user): void {
+            $accessibleQuery
+                ->where('created_by', $user->id)
+                ->orWhereIn(
+                    'created_by',
+                    $user->knowledgeAccessReceived()->select('owner_user_id')
+                );
+        });
     }
 }

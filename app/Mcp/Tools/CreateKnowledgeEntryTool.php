@@ -4,9 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Models\KnowledgeItem;
 use App\Models\User;
-use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Support\Str;
 use Illuminate\Support\Str;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -79,39 +77,25 @@ class CreateKnowledgeEntryTool extends Tool
 
     /**
      * Handle the tool request.
-     * Creates a draft KnowledgeItem scoped to the authenticated user or a configured default user.
      */
     public function handle(Request $request): Response|ResponseFactory
     {
-        $title = (string) $request->get('title', '');
+        $title = trim((string) $request->get('title', ''));
         $content = (string) $request->get('content_markdown', '');
         $category = $request->get('category');
-        $tags = array_values(array_filter($request->array('tags'), is_string(...)));
+        $tags = array_values(array_filter(
+            $request->array('tags'),
+            fn ($tag): bool => is_string($tag) && trim($tag) !== ''
+        ));
 
-        $slugBase = Str::slug($title);
-        if ($slugBase === '') {
-            $slugBase = 'knowledge-entry';
-        }
-
-        $slug = $slugBase;
-        $i = 2;
-
-        $userId = $this->resolveUserId($request);
         $requireAuth = (bool) config('knowledge.mcp.require_auth');
         $userId = $this->resolveUserId($request);
-        $requireAuth = (bool) config('knowledge.mcp.require_auth');
 
-        if (($requireAuth && ! $request->user()) || ! $userId) {
-            return Response::error('Unauthorized. Configure KB_MCP_DEFAULT_USER_ID or use Sanctum auth.');
-        if (($requireAuth && ! $request->user()) || ! $userId) {
+        if (($requireAuth && ! $request->user()) || $userId === null) {
             return Response::error('Unauthorized. Configure KB_MCP_DEFAULT_USER_ID or use Sanctum auth.');
         }
 
-        while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
-            $slug = $slugBase.'-'.$i;
-            $slug = $slugBase.'-'.$i;
-            $i++;
-        }
+        $slug = $this->buildUniqueSlug($title);
 
         $item = KnowledgeItem::query()->create([
             'slug' => $slug,
@@ -121,7 +105,6 @@ class CreateKnowledgeEntryTool extends Tool
             'tags' => $tags,
             'source' => 'ai',
             'status' => 'draft',
-            'created_by' => $userId,
             'created_by' => $userId,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
@@ -136,7 +119,7 @@ class CreateKnowledgeEntryTool extends Tool
     }
 
     /**
-     * Resolve the acting user ID from the authenticated request user or the configured default.
+     * Resolve the acting user ID from auth context or configured default.
      */
     private function resolveUserId(Request $request): ?int
     {
@@ -145,6 +128,7 @@ class CreateKnowledgeEntryTool extends Tool
         }
 
         $defaultUserId = config('knowledge.mcp.default_user_id');
+
         if (! is_numeric($defaultUserId)) {
             return null;
         }
@@ -152,5 +136,27 @@ class CreateKnowledgeEntryTool extends Tool
         $id = (int) $defaultUserId;
 
         return User::query()->whereKey($id)->exists() ? $id : null;
+    }
+
+    /**
+     * Build a unique slug with numeric suffixes when collisions exist.
+     */
+    private function buildUniqueSlug(string $title): string
+    {
+        $slugBase = Str::slug($title);
+
+        if ($slugBase === '') {
+            $slugBase = 'knowledge-entry';
+        }
+
+        $slug = $slugBase;
+        $suffix = 2;
+
+        while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
+            $slug = $slugBase.'-'.$suffix;
+            $suffix++;
+        }
+
+        return $slug;
     }
 }
