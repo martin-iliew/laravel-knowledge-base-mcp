@@ -14,6 +14,7 @@ For full internals, see `ARCHITECTURE.md`.
 - [What This Project Does](#what-this-project-does)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
+- [OpenAI API Key (Required)](#openai-api-key-required)
 - [Manual Setup (Deterministic)](#manual-setup-deterministic)
 - [How to Operate Day to Day](#how-to-operate-day-to-day)
 - [MCP Usage and Authentication](#mcp-usage-and-authentication)
@@ -47,11 +48,32 @@ Prerequisites:
 - Docker + Docker Compose
 - PHP + Composer (needed to install dependencies and bootstrap Sail)
 
-### Fastest Path
+#### Optional: Sail alias (recommended)
+
+Run this so you dont need to add `./vendor/bin/sail` to your commands and use `sail` instead:
+
+```bash
+alias sail='sh $([ -f sail ] && echo sail || echo vendor/bin/sail)'
+```
+
+### Fastest Path (Most users)
 
 ```bash
 composer install
 cp .env.example .env
+```
+
+Add your OpenAI key to `.env`:
+
+```ini
+OPENAI_API_KEY=sk-...
+```
+
+You can create the key in your OpenAI dashboard: `https://platform.openai.com/api-keys`.
+
+Then run:
+
+```bash
 npm run setup
 ```
 
@@ -64,7 +86,10 @@ Notes:
   - run migrations + seeders
   - install npm deps
   - start Vite dev server
+- `npm run setup` is an alias to `npm run setup:dev`.
+- `npm run setup` runs `sail down -v` internally, so it resets local DB volume data.
 - Keep that terminal running while developing frontend.
+- For a one-time production-style asset build instead of dev server, use `npm run setup:build`.
 
 ### First Login (Seeded Users)
 
@@ -82,6 +107,18 @@ Examples:
 - `viewer@acme.test`
 - `test@example.com`
 
+## OpenAI API Key (Required)
+
+By default, this app generates embeddings with Laravel AI provider `openai` (`config/ai.php`).
+
+You should set `OPENAI_API_KEY` before creating/editing knowledge content because indexing jobs call the embeddings API.
+
+Without `OPENAI_API_KEY`:
+
+- `SyncKnowledgeItemIndex` jobs will fail/retry when new embeddings are needed.
+- semantic vector retrieval quality drops or fails for new/updated content.
+- MCP search can still use lexical fallback, but you lose the main dense retrieval path.
+
 ## Manual Setup (Deterministic)
 
 Use this when you want explicit control over each step.
@@ -89,21 +126,21 @@ Use this when you want explicit control over each step.
 ```bash
 composer install
 cp .env.example .env
-vendor/bin/sail up -d
-vendor/bin/sail composer install
-vendor/bin/sail artisan key:generate
-vendor/bin/sail artisan migrate --seed
-vendor/bin/sail npm install
+sail up -d
+sail composer install
+sail artisan key:generate
+sail artisan migrate --seed
+sail npm install
 ```
 
 Then run the two long-lived processes in separate terminals:
 
 ```bash
-vendor/bin/sail npm run dev
+sail npm run dev
 ```
 
 ```bash
-vendor/bin/sail artisan queue:listen --tries=1
+sail artisan queue:listen --tries=1
 ```
 
 Open:
@@ -116,19 +153,19 @@ Open:
 ### Core Container Lifecycle
 
 ```bash
-vendor/bin/sail up -d
-vendor/bin/sail stop
-vendor/bin/sail down
-vendor/bin/sail down -v
+sail up -d
+sail stop
+sail down
+sail down -v
 ```
 
 Use `down -v` only when you intentionally want to reset DB volume data.
 
 ### Typical Development Loop
 
-1. Start containers: `vendor/bin/sail up -d`
-2. Start queue worker: `vendor/bin/sail artisan queue:listen --tries=1`
-3. Start Vite: `vendor/bin/sail npm run dev`
+1. Start containers: `sail up -d`
+2. Start queue worker: `sail artisan queue:listen --tries=1`
+3. Start Vite: `sail npm run dev`
 4. Build/test changes as needed (commands below)
 
 ### Route Changes (Wayfinder)
@@ -136,17 +173,68 @@ Use `down -v` only when you intentionally want to reset DB volume data.
 If backend routes/actions changed and TypeScript route helpers are stale:
 
 ```bash
-vendor/bin/sail artisan wayfinder:generate --with-form --no-interaction
+sail artisan wayfinder:generate --with-form --no-interaction
 ```
 
 ## MCP Usage and Authentication
 
 MCP route is defined in `routes/ai.php` at `/mcp/knowledge`.
 
-### Authenticated MCP 
-Create/revoke tokens from the app settings page:
+### 1) Enable auth mode for Claude Code
 
-- `Settings -> MCP Token`
+In `.env`:
+
+```ini
+KB_MCP_REQUIRE_AUTH=true
+```
+
+Then reload config:
+
+```bash
+sail artisan config:clear
+```
+
+### 2) Generate token in the app
+
+Create/revoke tokens from:
+
+- `Settings -> Token settings` (`/settings/mcp-token`)
+
+Token behavior:
+
+- plaintext token is shown once after creation
+- copy it immediately and store securely
+- if lost, revoke and generate a new token
+
+### 3) Configure Claude Code MCP
+
+Claude Code now recommends HTTP transport for remote MCP servers.
+Older examples may say "project" scope; current Claude Code CLI uses `--scope local` for project-local setup.
+
+CLI option:
+
+```bash
+export KB_MCP_TOKEN="paste-token-from-settings-page"
+claude mcp add --transport http knowledge-base http://localhost/mcp/knowledge --header "Authorization: Bearer $KB_MCP_TOKEN" --scope local
+```
+
+Shared project config option (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "knowledge-base": {
+      "type": "http",
+      "url": "http://localhost/mcp/knowledge",
+      "headers": {
+        "Authorization": "Bearer ${KB_MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+If you use `.mcp.json`, set `KB_MCP_TOKEN` in your shell before launching Claude Code.
 
 ## Search and Indexing Behavior
 
@@ -179,9 +267,9 @@ To disable paid reranking APIs:
 KB_ENABLE_AI_RERANK=false
 ```
 
-### Lexical-Only Mode (No Embedding Provider)
+### Lexical-Heavy Retrieval Mode (Optional)
 
-If you intentionally run without embedding provider keys, disable dense retrieval:
+If you want retrieval to rely mostly on lexical matching, disable dense retrieval:
 
 ```ini
 KB_SEARCH_V2_ENABLED=false
@@ -195,6 +283,12 @@ KB_V2_SINGLE_DENSE_K=0
 KB_V2_SHORT_DENSE_K=0
 KB_V2_LONG_DENSE_K=0
 ```
+
+Important:
+
+- these flags change retrieval behavior
+- indexing still attempts embedding generation for new/updated chunks
+- keep an embedding provider key configured (OpenAI by default), or customize the indexing job for your environment
 
 ## Configuration Reference
 
@@ -226,8 +320,8 @@ High-impact env vars:
 - MCP auth:
   - `KB_MCP_REQUIRE_AUTH`
   - `KB_MCP_DEFAULT_USER_ID`
-- AI providers (depending on your chosen providers):
-  - `OPENAI_API_KEY`
+- AI providers:
+  - `OPENAI_API_KEY` (required by default for embeddings)
   - `COHERE_API_KEY`
   - `GEMINI_API_KEY`
   - others in `.env.example`
@@ -235,7 +329,7 @@ High-impact env vars:
 After env changes:
 
 ```bash
-vendor/bin/sail artisan config:clear
+sail artisan config:clear
 ```
 
 ## Testing, Linting, and Build
@@ -243,13 +337,13 @@ vendor/bin/sail artisan config:clear
 ### PHP formatting
 
 ```bash
-vendor/bin/sail bin pint --dirty --format agent
+sail bin pint --dirty --format agent
 ```
 
 ### Frontend lint
 
 ```bash
-vendor/bin/sail npm run lint
+sail npm run lint
 ```
 
 ### Build assets
@@ -281,32 +375,32 @@ sail artisan knowledge:search-eval --user-id=1 --limit=10
 ### MCP returns `Unauthorized`
 
 - Check `KB_MCP_REQUIRE_AUTH`.
-- If `true`, ensure valid Sanctum token in `Authorization` header.
+- If `true`, ensure valid Sanctum token in `Authorization` header (generate from `Settings -> Token settings`).
 - If `false`, ensure `KB_MCP_DEFAULT_USER_ID` is a valid user.
 
 ### Frontend changes do not appear
 
 Run one of:
 
-- `vendor/bin/sail npm run dev` (recommended during development)
-- `vendor/bin/sail npm run build`
+- `sail npm run dev` (recommended during development)
+- `sail npm run build`
 
 ### Vite manifest error (`Unable to locate file in Vite manifest`)
 
 Run:
 
 ```bash
-vendor/bin/sail npm run build
+sail npm run build
 ```
 
-Or keep `vendor/bin/sail npm run dev` running.
+Or keep `sail npm run dev` running.
 
 ### DB reset for clean local state
 
 ```bash
-vendor/bin/sail down -v
-vendor/bin/sail up -d
-vendor/bin/sail artisan migrate --seed
+sail down -v
+sail up -d
+sail artisan migrate --seed
 ```
 
 ### Windows performance issues
@@ -317,4 +411,3 @@ Run inside WSL filesystem, not `/mnt/c/...`.
 
 - Full architecture and internals: `ARCHITECTURE.md`
 - Team/agent instructions: `AGENTS.md`
-
