@@ -143,30 +143,8 @@ vendor/bin/sail artisan wayfinder:generate --with-form --no-interaction
 
 MCP route is defined in `routes/ai.php` at `/mcp/knowledge`.
 
-### Mode A: Local Development (Default, Easier)
-
-```ini
-KB_MCP_REQUIRE_AUTH=false
-KB_MCP_DEFAULT_USER_ID=1
-```
-
-With this mode, unauthenticated MCP calls execute under a fallback user scope.
-
-### Mode B: Authenticated MCP (Recommended for Shared/Prod)
-
-```ini
-KB_MCP_REQUIRE_AUTH=true
-```
-
-Then create a token and send `Authorization: Bearer <token>`.
-
-CLI example:
-
-```bash
-vendor/bin/sail artisan tinker --execute="echo \App\Models\User::findOrFail(1)->createToken('claude-code',['mcp'])->plainTextToken;"
-```
-
-Or create/revoke tokens from the app settings page:
+### Authenticated MCP 
+Create/revoke tokens from the app settings page:
 
 - `Settings -> MCP Token`
 
@@ -277,25 +255,25 @@ vendor/bin/sail npm run lint
 ### Build assets
 
 ```bash
-vendor/bin/sail npm run build
+sail npm run build
 ```
 
 ### Run tests (compact)
 
 ```bash
-vendor/bin/sail artisan test --compact
+sail artisan test --compact
 ```
 
 ### Run a specific test file
 
 ```bash
-vendor/bin/sail artisan test --compact tests/Feature/KnowledgeSearchServiceRetrievalTest.php
+sail artisan test --compact tests/Feature/KnowledgeSearchServiceRetrievalTest.php
 ```
 
 ### Evaluate search quality (before/after v2)
 
 ```bash
-vendor/bin/sail artisan knowledge:search-eval --user-id=1 --limit=10
+sail artisan knowledge:search-eval --user-id=1 --limit=10
 ```
 
 ## Troubleshooting
@@ -305,15 +283,6 @@ vendor/bin/sail artisan knowledge:search-eval --user-id=1 --limit=10
 - Check `KB_MCP_REQUIRE_AUTH`.
 - If `true`, ensure valid Sanctum token in `Authorization` header.
 - If `false`, ensure `KB_MCP_DEFAULT_USER_ID` is a valid user.
-
-### Search results are stale after edits
-
-- Confirm queue worker is running.
-- Check failed jobs:
-
-```bash
-vendor/bin/sail artisan queue:failed
-```
 
 ### Frontend changes do not appear
 
