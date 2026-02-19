@@ -1,6 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Database, LayoutGrid, PlusCircle, Settings as SettingsIcon } from 'lucide-react';
-import { NavFooter } from '@/components/nav-footer';
+import { Database, LayoutGrid, PlusCircle, Settings as SettingsIcon } from 'lucide-react';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
