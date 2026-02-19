@@ -2,40 +2,42 @@ import type { FormComponentRef } from '@inertiajs/core';
 import { Form, Head, Link } from '@inertiajs/react';
 import { type MutableRefObject, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import ConfirmActionDialog from '@/components/confirm-action-dialog';
 import FormSelect from '@/components/form-select';
 import Heading from '@/components/heading';
-import HighlightCodeBlock from '@/components/highlight-code-block';
-import HighlightCodeEditor from '@/components/highlight-code-editor';
 import InputError from '@/components/input-error';
-import KnowledgeMarkdownEditor from '@/components/knowledge-markdown-editor';
+import HighlightCodeBlock from '@/components/knowledge/code-block';
+import HighlightCodeEditor from '@/components/knowledge/code-editor';
+import KnowledgeMarkdownEditor from '@/components/knowledge/markdown-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { index as knowledgeBaseIndex } from '@/routes/knowledge-base';
+import {
+    create as createKnowledgeItem,
+    edit as editKnowledgeItem,
+    store as storeKnowledgeItem,
+    update as updateKnowledgeItem,
+} from '@/routes/knowledge-items';
+import {
+    destroy as destroyCodeExample,
+    store as storeCodeExample,
+    update as updateCodeExample,
+} from '@/routes/knowledge-items/code-examples';
+import {
+    destroy as destroyKnowledgeResource,
+    store as storeKnowledgeResource,
+    update as updateKnowledgeResource,
+} from '@/routes/knowledge-items/resources';
 import type { BreadcrumbItem } from '@/types';
 
 const toText = (value: unknown): string => {
     return typeof value === 'string' ? value : '';
 };
-
-const optionalInteger = (min: number, max: number) =>
-    z.preprocess((value) => {
-        if (typeof value === 'number') {
-            return value;
-        }
-
-        const rawValue = toText(value).trim();
-
-        if (rawValue === '') {
-            return undefined;
-        }
-
-        const parsedValue = Number(rawValue);
-
-        return Number.isFinite(parsedValue) ? parsedValue : value;
-    }, z.number().int().min(min).max(max).optional());
 
 const codeLanguageOptions: string[] = [
     'php',
@@ -76,11 +78,9 @@ const knowledgeItemSchema = z.object({
                 .filter((tag) => tag.length > 0),
         z.array(z.string().max(60, 'Each tag must be 60 characters or fewer.')),
     ),
-    status: z.enum(['draft', 'published', 'archived']),
 });
 
 const codeExampleCreateSchema = z.object({
-    sort_order: optionalInteger(0, 65535),
     title: z.preprocess(
         (value) => toText(value).trim(),
         z.string().max(255, 'Title must be 255 characters or fewer.'),
@@ -105,7 +105,6 @@ const codeExampleCreateSchema = z.object({
 
 const knowledgeResourceCreateSchema = z
     .object({
-        sort_order: optionalInteger(0, 65535),
         type: z.literal('link'),
         label: z.preprocess(
             (value) => toText(value).trim(),
@@ -271,9 +270,10 @@ export default function KnowledgeForm({
     const isEditing = mode === 'edit' && item !== null;
     const activeStep: KnowledgeFormStep =
         isEditing && step === 'enhancements' ? 'enhancements' : 'details';
-    const canUpdate = permissions?.can_update ?? true;
+    const canUpdate = permissions?.can_update ?? !isEditing;
     const canDelete = permissions?.can_delete ?? false;
-    const accessLevel = permissions?.access_level ?? 'owner';
+    const accessLevel =
+        permissions?.access_level ?? (isEditing ? 'viewer' : 'owner');
     const knowledgeItemFormRef = useRef<FormComponentRef | null>(null);
     const createCodeExampleFormRef = useRef<FormComponentRef | null>(null);
     const createKnowledgeResourceFormRef = useRef<FormComponentRef | null>(null);
@@ -289,7 +289,6 @@ export default function KnowledgeForm({
         filename: '',
         code: '',
     });
-    const [statusValue, setStatusValue] = useState(item?.status ?? 'draft');
     const [existingCodeExampleDrafts, setExistingCodeExampleDrafts] = useState<
         Record<number, { language: string; filename: string; code: string }>
     >(
@@ -321,20 +320,26 @@ export default function KnowledgeForm({
     );
     const nonLinkResourcesCount = resources.length - linkResources.length;
     const detailsStepHref =
-        isEditing && item ? `/knowledge-items/${item.id}/edit?step=details` : '/knowledge-items/create';
+        isEditing && item
+            ? editKnowledgeItem(item.id, { query: { step: 'details' } })
+            : createKnowledgeItem();
     const enhancementsStepHref =
-        isEditing && item ? `/knowledge-items/${item.id}/edit?step=enhancements` : null;
+        isEditing && item
+            ? editKnowledgeItem(item.id, { query: { step: 'enhancements' } })
+            : null;
+    const knowledgeItemFormRoute =
+        isEditing && item
+            ? updateKnowledgeItem.form(item.id, { query: { step: 'details' } })
+            : storeKnowledgeItem.form();
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Knowledge Base',
-            href: '/knowledge-base',
+            href: knowledgeBaseIndex(),
         },
         {
             title: isEditing ? 'Edit item' : 'New item',
-            href: isEditing
-                ? `/knowledge-items/${item.id}/edit`
-                : '/knowledge-items/create',
+            href: isEditing && item ? editKnowledgeItem(item.id) : createKnowledgeItem(),
         },
     ];
 
@@ -358,7 +363,7 @@ export default function KnowledgeForm({
                             <div className="flex items-center gap-2">
                                 <Badge variant="outline">{accessLevel}</Badge>
                                 <Button asChild variant="outline">
-                                    <Link href="/knowledge-base">Back to list</Link>
+                                    <Link href={knowledgeBaseIndex()}>Back to list</Link>
                                 </Button>
                             </div>
                         </div>
@@ -409,12 +414,7 @@ export default function KnowledgeForm({
                         <CardContent>
                             <Form
                                 ref={knowledgeItemFormRef}
-                                action={
-                                    isEditing
-                                        ? `/knowledge-items/${item.id}?step=details`
-                                        : '/knowledge-items'
-                                }
-                                method={isEditing ? 'patch' : 'post'}
+                                {...knowledgeItemFormRoute}
                                 options={{ preserveScroll: true }}
                                 onBefore={() =>
                                     canUpdate &&
@@ -462,29 +462,6 @@ export default function KnowledgeForm({
                                                 <InputError message={errors.category} />
                                             </div>
 
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="status">Status</Label>
-                                                <FormSelect
-                                                    id="status"
-                                                    name="status"
-                                                    value={statusValue}
-                                                    onValueChange={(status) =>
-                                                        setStatusValue(
-                                                            status as
-                                                                | 'draft'
-                                                                | 'published'
-                                                                | 'archived',
-                                                        )
-                                                    }
-                                                    disabled={!canUpdate}
-                                                    options={[
-                                                        { value: 'draft', label: 'Draft' },
-                                                        { value: 'published', label: 'Published' },
-                                                        { value: 'archived', label: 'Archived' },
-                                                    ]}
-                                                />
-                                                <InputError message={errors.status} />
-                                            </div>
                                         </div>
 
                                         <div className="grid gap-2">
@@ -502,7 +479,7 @@ export default function KnowledgeForm({
 
                                         <div className="grid gap-2">
                                             <Label htmlFor="content_markdown">Content</Label>
-                                            <input
+                                            <Input
                                                 type="hidden"
                                                 name="content_markdown"
                                                 value={markdownContent}
@@ -567,7 +544,7 @@ export default function KnowledgeForm({
                                         <Link href={detailsStepHref}>Back to details</Link>
                                     </Button>
                                     <Button asChild size="sm">
-                                        <Link href="/knowledge-base">Skip for now</Link>
+                                        <Link href={knowledgeBaseIndex()}>Skip for now</Link>
                                     </Button>
                                 </div>
                             </CardHeader>
@@ -583,8 +560,7 @@ export default function KnowledgeForm({
                             <CardContent className="space-y-6">
                                 <Form
                                     ref={createCodeExampleFormRef}
-                                    action={`/knowledge-items/${item.id}/code-examples`}
-                                    method="post"
+                                    {...storeCodeExample.form(item.id)}
                                     options={{ preserveScroll: true }}
                                     onBefore={() =>
                                         validateFormWithSchema(
@@ -638,13 +614,6 @@ export default function KnowledgeForm({
                                                         }))
                                                     }
                                                 />
-                                                <Input
-                                                    name="sort_order"
-                                                    type="number"
-                                                    min={0}
-                                                    max={65535}
-                                                    placeholder="Sort order"
-                                                />
                                             </div>
                                             <Input
                                                 name="description"
@@ -654,6 +623,7 @@ export default function KnowledgeForm({
                                                 name="code"
                                                 value={newCodeExampleDraft.code}
                                                 language={newCodeExampleDraft.language}
+                                                filename={newCodeExampleDraft.filename}
                                                 minHeightPx={360}
                                                 onChange={(code) =>
                                                     setNewCodeExampleDraft((draft) => ({
@@ -694,8 +664,7 @@ export default function KnowledgeForm({
                                                     className="rounded-xl border border-neutral-200/80 p-4 dark:border-neutral-800/80"
                                                 >
                                                 <Form
-                                                    action={`/knowledge-items/${item.id}/code-examples/${example.id}`}
-                                                    method="patch"
+                                                    {...updateCodeExample.form([item.id, example.id])}
                                                     options={{ preserveScroll: true }}
                                                     className="grid gap-3"
                                                 >
@@ -769,12 +738,6 @@ export default function KnowledgeForm({
                                                                         )
                                                                     }
                                                                 />
-                                                                <Input
-                                                                    name="sort_order"
-                                                                    type="number"
-                                                                    min={0}
-                                                                    defaultValue={example.sort_order}
-                                                                />
                                                             </div>
                                                             <Input
                                                                 name="description"
@@ -792,6 +755,12 @@ export default function KnowledgeForm({
                                                                     existingCodeExampleDrafts[
                                                                         example.id
                                                                     ]?.language ?? example.language
+                                                                }
+                                                                filename={
+                                                                    existingCodeExampleDrafts[
+                                                                        example.id
+                                                                    ]?.filename ??
+                                                                    example.filename
                                                                 }
                                                                 minHeightPx={360}
                                                                 onChange={(code) =>
@@ -830,27 +799,14 @@ export default function KnowledgeForm({
                                                         </>
                                                     )}
                                                 </Form>
-                                                <Form
-                                                    action={`/knowledge-items/${item.id}/code-examples/${example.id}`}
-                                                    method="delete"
-                                                    onBefore={() =>
-                                                        window.confirm(
-                                                            'Delete this code example?',
-                                                        )
-                                                    }
+                                                <ConfirmActionDialog
+                                                    form={destroyCodeExample.form([item.id, example.id])}
+                                                    title="Delete code example?"
+                                                    description="This code example will be permanently removed from this knowledge item."
+                                                    triggerLabel="Delete"
+                                                    confirmLabel="Delete"
                                                     className="mt-2"
-                                                >
-                                                    {({ processing }) => (
-                                                        <Button
-                                                            type="submit"
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            disabled={processing}
-                                                        >
-                                                            Delete
-                                                        </Button>
-                                                    )}
-                                                </Form>
+                                                />
                                                 </div>
                                             );
                                         })
@@ -869,8 +825,7 @@ export default function KnowledgeForm({
                             <CardContent className="space-y-6">
                                 <Form
                                     ref={createKnowledgeResourceFormRef}
-                                    action={`/knowledge-items/${item.id}/resources`}
-                                    method="post"
+                                    {...storeKnowledgeResource.form(item.id)}
                                     options={{ preserveScroll: true }}
                                     onBefore={() =>
                                         validateFormWithSchema(
@@ -885,7 +840,7 @@ export default function KnowledgeForm({
                                         <>
                                             <p className="text-sm font-medium">Add link resource</p>
                                             <div className="grid gap-3 sm:grid-cols-2">
-                                                <input type="hidden" name="type" value="link" />
+                                                <Input type="hidden" name="type" value="link" />
                                                 <Input
                                                     name="label"
                                                     placeholder="Label (optional)"
@@ -897,12 +852,11 @@ export default function KnowledgeForm({
                                                     placeholder="https://..."
                                                     required
                                                 />
-                                                <Input name="sort_order" type="number" min={0} max={65535} placeholder="Sort order" />
                                             </div>
-                                            <textarea
+                                            <Textarea
                                                 name="extracted_text"
                                                 rows={4}
-                                                className="border-input placeholder:text-muted-foreground focus-visible:ring-ring/50 flex min-h-24 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] md:text-sm"
+                                                className="min-h-24"
                                                 placeholder="Extracted text (optional)"
                                             />
                                             <InputError message={errors.type || errors.url} />
@@ -922,8 +876,7 @@ export default function KnowledgeForm({
                                         linkResources.map((resource) => (
                                             <div key={resource.id} className="rounded-lg border p-4">
                                                 <Form
-                                                    action={`/knowledge-items/${item.id}/resources/${resource.id}`}
-                                                    method="patch"
+                                                    {...updateKnowledgeResource.form([item.id, resource.id])}
                                                     options={{ preserveScroll: true }}
                                                     className="grid gap-3"
                                                 >
@@ -948,7 +901,7 @@ export default function KnowledgeForm({
                                                             </div>
 
                                                             <div className="grid gap-3 sm:grid-cols-2">
-                                                                <input
+                                                                <Input
                                                                     type="hidden"
                                                                     name="type"
                                                                     value="link"
@@ -965,20 +918,13 @@ export default function KnowledgeForm({
                                                                     placeholder="https://..."
                                                                     required
                                                                 />
-                                                                <Input
-                                                                    name="sort_order"
-                                                                    type="number"
-                                                                    min={0}
-                                                                    defaultValue={resource.sort_order}
-                                                                    placeholder="Sort order"
-                                                                />
                                                             </div>
 
-                                                            <textarea
+                                                            <Textarea
                                                                 name="extracted_text"
                                                                 rows={5}
                                                                 defaultValue={resource.extracted_text ?? ''}
-                                                                className="border-input placeholder:text-muted-foreground focus-visible:ring-ring/50 flex min-h-24 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] md:text-sm"
+                                                                className="min-h-24"
                                                             />
 
                                                             {resource.extract_error ? (
@@ -1000,27 +946,14 @@ export default function KnowledgeForm({
                                                         </>
                                                     )}
                                                 </Form>
-                                                <Form
-                                                    action={`/knowledge-items/${item.id}/resources/${resource.id}`}
-                                                    method="delete"
-                                                    onBefore={() =>
-                                                        window.confirm(
-                                                            'Delete this resource?',
-                                                        )
-                                                    }
+                                                <ConfirmActionDialog
+                                                    form={destroyKnowledgeResource.form([item.id, resource.id])}
+                                                    title="Delete resource?"
+                                                    description="This resource link will be permanently removed from this knowledge item."
+                                                    triggerLabel="Delete"
+                                                    confirmLabel="Delete"
                                                     className="mt-2"
-                                                >
-                                                    {({ processing }) => (
-                                                        <Button
-                                                            type="submit"
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            disabled={processing}
-                                                        >
-                                                            Delete
-                                                        </Button>
-                                                    )}
-                                                </Form>
+                                                />
                                             </div>
                                         ))
                                     )}

@@ -1,1 +1,1 @@
-export { default } from './highlight-code-block';
+export { default } from './knowledge/code-block';

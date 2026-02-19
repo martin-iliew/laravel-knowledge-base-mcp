@@ -5,19 +5,23 @@ import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
+import { index as knowledgeBaseIndex } from '@/routes/knowledge-base';
+import { edit as editKnowledgeItem } from '@/routes/knowledge-items';
+import { index as knowledgeSearchIndex } from '@/routes/knowledge-search';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Knowledge Base',
-        href: '/dashboard',
+        href: knowledgeBaseIndex(),
     },
     {
         title: 'Search',
-        href: '/knowledge/search',
+        href: knowledgeSearchIndex(),
     },
 ];
 
@@ -79,6 +83,7 @@ export default function KnowledgeSearch({
     categoryOptions: string[];
 }) {
     const [limitValue, setLimitValue] = useState(String(filters.limit));
+    const [includeDraftsValue, setIncludeDraftsValue] = useState(filters.include_drafts);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -91,7 +96,7 @@ export default function KnowledgeSearch({
                         description="Hybrid retrieval over your indexed items."
                     />
                     <Button asChild variant="outline">
-                        <Link href="/dashboard">Back to knowledge base</Link>
+                        <Link href={knowledgeBaseIndex()}>Back to knowledge base</Link>
                     </Button>
                 </div>
 
@@ -104,8 +109,7 @@ export default function KnowledgeSearch({
                     </CardHeader>
                     <CardContent>
                         <Form
-                            method="get"
-                            action="/knowledge/search"
+                            {...knowledgeSearchIndex.form()}
                             options={{ preserveScroll: true }}
                             className="grid gap-4"
                         >
@@ -164,15 +168,23 @@ export default function KnowledgeSearch({
                                             />
                                         </div>
 
-                                        <label className="flex items-center gap-2 text-sm">
-                                            <input
-                                                type="checkbox"
-                                                name="include_drafts"
-                                                value="1"
-                                                defaultChecked={filters.include_drafts}
+                                        <Input
+                                            type="hidden"
+                                            name="include_drafts"
+                                            value={includeDraftsValue ? '1' : '0'}
+                                        />
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <Checkbox
+                                                id="include-drafts-search"
+                                                checked={includeDraftsValue}
+                                                onCheckedChange={(checked) =>
+                                                    setIncludeDraftsValue(checked === true)
+                                                }
                                             />
-                                            Include drafts
-                                        </label>
+                                            <Label htmlFor="include-drafts-search" className="cursor-pointer">
+                                                Include drafts
+                                            </Label>
+                                        </div>
                                     </div>
 
                                     <Button type="submit" className="w-fit" disabled={processing}>
@@ -198,7 +210,7 @@ export default function KnowledgeSearch({
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <CardTitle>{result.item.title}</CardTitle>
                                         <Button asChild size="sm" variant="outline">
-                                            <Link href={`/knowledge-items/${result.item.id}/edit`}>
+                                            <Link href={editKnowledgeItem(result.item.id)}>
                                                 Open item
                                             </Link>
                                         </Button>

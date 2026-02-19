@@ -11,6 +11,8 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
+import highlightThemeDarkHref from 'highlight.js/styles/github-dark.css?url';
+import highlightThemeLightHref from 'highlight.js/styles/github.css?url';
 
 const LANGUAGE_ALIASES: Record<string, string> = {
     sh: 'bash',
@@ -41,6 +43,65 @@ const REGISTERED_LANGUAGES: Record<string, LanguageFn> = {
 };
 
 let hasRegisteredLanguages = false;
+let hasBoundThemeObserver = false;
+const HIGHLIGHT_THEME_LINK_ID = 'kb-highlight-theme';
+
+function resolveHighlightThemeHref(): string {
+    if (typeof document === 'undefined') {
+        return highlightThemeLightHref;
+    }
+
+    return document.documentElement.classList.contains('dark')
+        ? highlightThemeDarkHref
+        : highlightThemeLightHref;
+}
+
+function ensureHighlightTheme(): void {
+    if (typeof document === 'undefined') {
+        return;
+    }
+
+    const expectedHref = resolveHighlightThemeHref();
+    const existingNode = document.getElementById(HIGHLIGHT_THEME_LINK_ID);
+    const themeLink =
+        existingNode instanceof HTMLLinkElement
+            ? existingNode
+            : document.createElement('link');
+
+    if (!(existingNode instanceof HTMLLinkElement)) {
+        themeLink.id = HIGHLIGHT_THEME_LINK_ID;
+        themeLink.rel = 'stylesheet';
+        document.head.appendChild(themeLink);
+    }
+
+    if (themeLink.getAttribute('href') !== expectedHref) {
+        themeLink.setAttribute('href', expectedHref);
+    }
+
+    if (hasBoundThemeObserver) {
+        return;
+    }
+
+    const observer = new MutationObserver(() => {
+        const currentThemeLink = document.getElementById(HIGHLIGHT_THEME_LINK_ID);
+
+        if (!(currentThemeLink instanceof HTMLLinkElement)) {
+            return;
+        }
+
+        const nextHref = resolveHighlightThemeHref();
+
+        if (currentThemeLink.getAttribute('href') !== nextHref) {
+            currentThemeLink.setAttribute('href', nextHref);
+        }
+    });
+
+    observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+    });
+    hasBoundThemeObserver = true;
+}
 
 function ensureLanguages(): void {
     if (hasRegisteredLanguages) {
@@ -90,6 +151,7 @@ export function normalizeCodeLanguage(value: string | null | undefined): string 
 }
 
 export function highlightCode(code: string, language: string | null | undefined): string {
+    ensureHighlightTheme();
     ensureLanguages();
 
     const normalizedLanguage = normalizeCodeLanguage(language);
@@ -124,6 +186,8 @@ export function highlightMarkdownCodeBlocks(container: HTMLElement | null): void
         codeElement.className = normalizedLanguage
             ? `hljs language-${normalizedLanguage}`
             : 'hljs';
+        codeElement.style.backgroundColor = 'transparent';
+        codeElement.style.padding = '0';
         codeElement.innerHTML = highlightCode(rawCode, normalizedLanguage);
     });
 }

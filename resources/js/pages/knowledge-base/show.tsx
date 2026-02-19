@@ -1,12 +1,17 @@
 import { Head, Link } from '@inertiajs/react';
 import { ExternalLink, FileText, Link2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import HighlightCodeBlock from '@/components/highlight-code-block';
+import HighlightCodeBlock from '@/components/knowledge/code-block';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import { highlightMarkdownCodeBlocks } from '@/lib/highlight';
+import {
+    index as knowledgeBaseIndex,
+    show as showKnowledgeItem,
+} from '@/routes/knowledge-base';
+import { edit as editKnowledgeItem } from '@/routes/knowledge-items';
 import type { BreadcrumbItem } from '@/types';
 
 type ReaderTab = 'content' | 'code-examples' | 'resources';
@@ -75,11 +80,11 @@ export default function KnowledgeReader({
     const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Knowledge Base',
-            href: '/knowledge-base',
+            href: knowledgeBaseIndex(),
         },
         {
             title: item.title,
-            href: `/knowledge-base/${item.id}`,
+            href: showKnowledgeItem(item.id),
         },
     ];
 
@@ -87,6 +92,8 @@ export default function KnowledgeReader({
     const articleRef = useRef<HTMLElement | null>(null);
     const authorName = item.owner.name ?? item.owner.email ?? 'Unknown';
     const authorInitial = authorName.slice(0, 1).toUpperCase();
+    const accessLevel = permissions?.access_level ?? 'viewer';
+    const canUpdate = permissions?.can_update ?? false;
 
     useEffect(() => {
         if (activeTab !== 'content') {
@@ -107,18 +114,7 @@ export default function KnowledgeReader({
                         <div className="relative flex flex-wrap items-start justify-between gap-4">
                             <div className="space-y-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <Badge
-                                        variant={
-                                            item.status === 'published'
-                                                ? 'default'
-                                                : 'secondary'
-                                        }
-                                    >
-                                        {item.status}
-                                    </Badge>
-                                    <Badge variant="outline">
-                                        {permissions.access_level}
-                                    </Badge>
+                                    <Badge variant="outline">{accessLevel}</Badge>
                                     {item.category ? (
                                         <Badge variant="outline">{item.category}</Badge>
                                     ) : null}
@@ -130,13 +126,13 @@ export default function KnowledgeReader({
                                     Structured internal knowledge article
                                 </CardDescription>
                             </div>
-                            {permissions.can_update ? (
+                            {canUpdate ? (
                                 <Button
                                     asChild
                                     variant="outline"
                                     className="border-neutral-400/50 bg-background/60 backdrop-blur"
                                 >
-                                    <Link href={`/knowledge-items/${item.id}/edit`}>Edit</Link>
+                                    <Link href={editKnowledgeItem(item.id)}>Edit</Link>
                                 </Button>
                             ) : null}
                         </div>
@@ -269,7 +265,7 @@ export default function KnowledgeReader({
                                     No resources linked.
                                 </p>
                             ) : (
-                                <ul className="kb-resource-list space-y-4">
+                                <ul className="grid gap-3 sm:grid-cols-2">
                                     {resources.map((resource) => {
                                         const label =
                                             resource.label ||
@@ -279,64 +275,60 @@ export default function KnowledgeReader({
                                             'Untitled resource';
 
                                         return (
-                                            <li key={resource.id} className="kb-resource-item">
-                                                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-neutral-400 dark:bg-neutral-500" />
-                                                <div className="min-w-0 flex-1 space-y-2">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        {resource.type === 'link' &&
-                                                        resource.url ? (
-                                                            <a
-                                                                href={resource.url}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="kb-resource-pill"
-                                                            >
-                                                                <Link2 className="h-3.5 w-3.5" />
-                                                                {label}
-                                                                <ExternalLink className="h-3.5 w-3.5 opacity-70" />
-                                                            </a>
+                                            <li
+                                                key={resource.id}
+                                                className="rounded-xl border border-neutral-200/70 bg-background/70 p-4 shadow-xs transition hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900/30 dark:hover:border-neutral-700"
+                                            >
+                                                <div className="flex min-w-0 items-start justify-between gap-3">
+                                                    <div className="min-w-0 space-y-1">
+                                                        <p className="truncate text-sm font-semibold text-foreground">
+                                                            {label}
+                                                        </p>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {resource.type === 'link'
+                                                                ? 'External link'
+                                                                : 'File resource'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="mt-0.5 rounded-md border border-neutral-200/70 bg-muted/40 p-1.5 dark:border-neutral-700">
+                                                        {resource.type === 'link' ? (
+                                                            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
                                                         ) : (
-                                                            <span className="kb-resource-pill kb-resource-pill-muted">
-                                                                <FileText className="h-3.5 w-3.5" />
-                                                            </span>
+                                                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                                                         )}
                                                     </div>
-
-                                                    {resource.type === 'file' ? (
-                                                        <p className="text-sm text-muted-foreground">
-                                                            {resource.storage_path ||
-                                                                'File preview/download is not available yet.'}
-                                                            {resource.mime
-                                                                ? ` • ${resource.mime}`
-                                                                : ''}
-                                                            {resource.size !== null
-                                                                ? ` • ${resource.size} bytes`
-                                                                : ''}
-                                                        </p>
-                                                    ) : null}
-
-                                                    {resource.type === 'link' &&
-                                                    resource.url ? (
-                                                        <p className="truncate text-sm text-muted-foreground">
-                                                            {resource.url}
-                                                        </p>
-                                                    ) : null}
-
-                                                    {resource.extracted_text ? (
-                                                        <div className="rounded-lg border border-neutral-200/70 bg-muted/40 p-3 text-sm dark:border-neutral-700">
-                                                            <p className="mb-1 text-xs font-medium text-muted-foreground">
-                                                                Extracted notes
-                                                            </p>
-                                                            <p className="line-clamp-4 whitespace-pre-wrap">
-                                                                {resource.extracted_text}
-                                                            </p>
-                                                        </div>
-                                                    ) : null}
-
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Updated {formatDate(resource.updated_at)}
-                                                    </p>
                                                 </div>
+
+                                                {resource.type === 'link' && resource.url ? (
+                                                    <a
+                                                        href={resource.url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-neutral-200/80 bg-muted/30 px-3 py-2 text-sm text-foreground transition hover:border-neutral-300 hover:bg-muted/50 dark:border-neutral-700 dark:hover:border-neutral-600"
+                                                    >
+                                                        <span className="truncate">
+                                                            {resource.url}
+                                                        </span>
+                                                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                    </a>
+                                                ) : null}
+
+                                                {resource.type === 'file' ? (
+                                                    <p className="mt-3 text-sm text-muted-foreground">
+                                                        {resource.storage_path ||
+                                                            'File preview/download is not available yet.'}
+                                                        {resource.mime
+                                                            ? ` • ${resource.mime}`
+                                                            : ''}
+                                                        {resource.size !== null
+                                                            ? ` • ${resource.size} bytes`
+                                                            : ''}
+                                                    </p>
+                                                ) : null}
+
+                                                <p className="mt-3 text-xs text-muted-foreground">
+                                                    Updated {formatDate(resource.updated_at)}
+                                                </p>
                                             </li>
                                         );
                                     })}

@@ -22,7 +22,7 @@ class KnowledgeResourceController extends Controller
         $this->authorize('create', [KnowledgeResource::class, $knowledgeItem]);
 
         $validated = $request->validated();
-        $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
+        $validated['sort_order'] = $this->nextSortOrder($knowledgeItem);
         $validated['label'] = $this->normalizeOptionalString($validated['label'] ?? null);
         $validated['url'] = $this->normalizeOptionalString($validated['url'] ?? null);
         $validated['storage_path'] = $this->normalizeOptionalString($validated['storage_path'] ?? null);
@@ -47,7 +47,6 @@ class KnowledgeResourceController extends Controller
         $this->authorize('update', $knowledgeResource);
 
         $validated = $request->validated();
-        $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
         $validated['label'] = $this->normalizeOptionalString($validated['label'] ?? null);
         $validated['url'] = $this->normalizeOptionalString($validated['url'] ?? null);
         $validated['storage_path'] = $this->normalizeOptionalString($validated['storage_path'] ?? null);
@@ -85,5 +84,21 @@ class KnowledgeResourceController extends Controller
         $normalized = trim($value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * Calculate the next append-only sort order for a knowledge item's resources.
+     */
+    private function nextSortOrder(KnowledgeItem $knowledgeItem): int
+    {
+        $maxSortOrder = $knowledgeItem
+            ->resources()
+            ->max('sort_order');
+
+        if ($maxSortOrder === null) {
+            return 0;
+        }
+
+        return min(65535, ((int) $maxSortOrder) + 1);
     }
 }

@@ -141,3 +141,130 @@
         @apply bg-background text-foreground;
     }
 }
+
+@layer components {
+    .kb-markdown {
+        color: var(--foreground);
+        line-height: 1.75;
+    }
+
+    .kb-markdown > * + * {
+        margin-top: 1rem;
+    }
+
+    .kb-markdown h1,
+    .kb-markdown h2,
+    .kb-markdown h3,
+    .kb-markdown h4,
+    .kb-markdown h5,
+    .kb-markdown h6 {
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        line-height: 1.35;
+        letter-spacing: -0.01em;
+    }
+
+    .kb-markdown h1 {
+        font-size: 1.9rem;
+    }
+
+    .kb-markdown h2 {
+        font-size: 1.5rem;
+    }
+
+    .kb-markdown h3 {
+        font-size: 1.25rem;
+    }
+
+    .kb-markdown p {
+        margin: 0;
+    }
+
+    .kb-markdown ul,
+    .kb-markdown ol {
+        margin-left: 1.25rem;
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .kb-markdown ul {
+        list-style: disc;
+    }
+
+    .kb-markdown ol {
+        list-style: decimal;
+    }
+
+    .kb-markdown blockquote {
+        border-left: 3px solid color-mix(in oklab, var(--border) 65%, transparent);
+        padding-left: 1rem;
+        color: var(--muted-foreground);
+    }
+
+    .kb-markdown table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border-radius: 0.75rem;
+        border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    }
+
+    .kb-markdown th,
+    .kb-markdown td {
+        border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+        padding: 0.55rem 0.75rem;
+        text-align: left;
+    }
+
+    .kb-markdown th {
+        background: color-mix(in oklab, var(--muted) 65%, transparent);
+        font-weight: 600;
+    }
+
+    .kb-markdown a {
+        color: color-mix(in oklab, var(--foreground) 82%, #3b82f6 18%);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+    }
+
+    .kb-markdown :not(pre) > code {
+        border-radius: 0.4rem;
+        background: color-mix(in oklab, var(--muted) 60%, transparent);
+        padding: 0.15rem 0.4rem;
+        font-size: 0.9em;
+        font-family:
+            ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+            'Liberation Mono', 'Courier New', monospace;
+    }
+
+    .kb-markdown pre {
+        overflow-x: auto;
+        border-radius: 0.85rem;
+        border: 1px solid rgb(64 64 64 / 0.8);
+        background: rgb(10 10 10);
+        padding: 1rem;
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+
+    .kb-markdown pre code {
+        display: block;
+        width: max-content;
+        min-width: 100%;
+    }
+
+    .kb-visual-editor {
+        border-radius: 0.75rem;
+    }
+
+    .kb-visual-editor:focus-visible {
+        box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--ring) 65%, transparent);
+    }
+
+    .kb-visual-editor:empty::before {
+        content: attr(data-placeholder);
+        color: var(--muted-foreground);
+    }
+
+}

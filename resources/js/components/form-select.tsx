@@ -1,3 +1,4 @@
+import { Input } from '@/components/ui/input';
 import {
     Select,
     SelectContent,
@@ -28,7 +29,7 @@ export default function FormSelect({
 }) {
     return (
         <>
-            <input type="hidden" name={name} value={value} />
+            <Input type="hidden" name={name} value={value} />
             <Select
                 value={value}
                 onValueChange={onValueChange}

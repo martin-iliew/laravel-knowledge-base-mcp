@@ -22,7 +22,6 @@ class UpdateCodeExampleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'title' => ['nullable', 'string', 'max:255'],
             'language' => ['required', 'string', 'max:50'],
             'filename' => ['nullable', 'string', 'max:255'],
@@ -41,7 +40,6 @@ class UpdateCodeExampleRequest extends FormRequest
         return [
             'language.required' => 'Please choose a language.',
             'code.required' => 'Code content is required.',
-            'sort_order.integer' => 'Sort order must be a number.',
         ];
     }
 }

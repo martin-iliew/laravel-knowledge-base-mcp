@@ -42,7 +42,7 @@ class KnowledgeSearchController extends Controller
             );
         }
 
-        return Inertia::render('knowledge/search', [
+        return Inertia::render('knowledge-base/search', [
             'results' => $results,
             'filters' => [
                 'query' => $query,

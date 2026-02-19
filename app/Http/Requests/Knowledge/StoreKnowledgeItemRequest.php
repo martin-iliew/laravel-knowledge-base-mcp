@@ -45,7 +45,6 @@ class StoreKnowledgeItemRequest extends FormRequest
             'category' => ['nullable', 'string', 'max:120'],
             'tags' => ['nullable', 'array'],
             'tags.*' => ['string', 'max:60'],
-            'status' => ['nullable', 'in:draft,published,archived'],
         ];
     }
 
@@ -61,7 +60,6 @@ class StoreKnowledgeItemRequest extends FormRequest
             'content_markdown.required' => 'Content is required.',
             'tags.array' => 'Tags must be provided as a list.',
             'tags.*.string' => 'Each tag must be text.',
-            'status.in' => 'Status must be draft, published, or archived.',
         ];
     }
 }

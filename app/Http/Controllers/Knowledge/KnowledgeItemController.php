@@ -31,8 +31,7 @@ class KnowledgeItemController extends Controller
         /** @var User $user */
         $user = $request->user();
         $userId = (int) $user->id;
-        $receivedAccessByOwner = $user->knowledgeAccessReceived()
-            ->pluck('permission', 'owner_user_id');
+        $globalAccessLevel = $this->resolveAccessLevel($user);
 
         $items = KnowledgeItem::query()
             ->accessibleTo($user)
@@ -40,11 +39,11 @@ class KnowledgeItemController extends Controller
             ->withCount(['codeExamples', 'resources'])
             ->latest('updated_at')
             ->get()
-            ->map(function (KnowledgeItem $item) use ($receivedAccessByOwner, $userId): array {
+            ->map(function (KnowledgeItem $item) use ($globalAccessLevel, $userId): array {
                 $ownerId = (int) $item->created_by;
                 $accessLevel = $ownerId === $userId
                     ? 'owner'
-                    : ((string) ($receivedAccessByOwner->get($ownerId) ?? 'viewer'));
+                    : $globalAccessLevel;
 
                 return [
                     'id' => $item->id,
@@ -63,7 +62,7 @@ class KnowledgeItemController extends Controller
                         'email' => $item->creator?->email,
                     ],
                     'access_level' => $accessLevel,
-                    'can_update' => $ownerId === $userId || $accessLevel === 'editor',
+                    'can_update' => $ownerId === $userId || $globalAccessLevel === 'editor',
                     'can_delete' => $ownerId === $userId,
                 ];
             })
@@ -84,7 +83,7 @@ class KnowledgeItemController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        return Inertia::render('knowledge/form', [
+        return Inertia::render('knowledge-items/form', [
             'mode' => 'create',
             'step' => self::FORM_STEP_DETAILS,
             'item' => null,
@@ -108,7 +107,6 @@ class KnowledgeItemController extends Controller
 
         $validated = $request->validated();
         $title = trim((string) $validated['title']);
-        $status = (string) ($validated['status'] ?? 'draft');
 
         $knowledgeItem = KnowledgeItem::query()->create([
             'slug' => $this->buildUniqueSlug($title),
@@ -116,9 +114,9 @@ class KnowledgeItemController extends Controller
             'content_markdown' => (string) $validated['content_markdown'],
             'category' => $this->normalizeOptionalString($validated['category'] ?? null),
             'tags' => $this->normalizeTags($validated['tags'] ?? []),
-            'status' => $status,
+            'status' => 'published',
             'source' => 'human',
-            'published_at' => $status === 'published' ? now() : null,
+            'published_at' => now(),
             'created_by' => $request->user()->id,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
@@ -152,11 +150,9 @@ class KnowledgeItemController extends Controller
         $userId = (int) $user->id;
         $accessLevel = $ownerId === $userId
             ? 'owner'
-            : ((string) ($user->knowledgeAccessReceived()
-                ->where('owner_user_id', $ownerId)
-                ->value('permission') ?? 'viewer'));
+            : $this->resolveAccessLevel($user);
 
-        return Inertia::render('knowledge/form', [
+        return Inertia::render('knowledge-items/form', [
             'mode' => 'edit',
             'step' => $this->resolveFormStep($request, self::FORM_STEP_DETAILS),
             'item' => [
@@ -222,17 +218,14 @@ class KnowledgeItemController extends Controller
 
         $validated = $request->validated();
         $title = trim((string) $validated['title']);
-        $status = (string) ($validated['status'] ?? $knowledgeItem->status);
 
         $knowledgeItem->fill([
             'title' => $title,
             'content_markdown' => (string) $validated['content_markdown'],
             'category' => $this->normalizeOptionalString($validated['category'] ?? null),
             'tags' => $this->normalizeTags($validated['tags'] ?? []),
-            'status' => $status,
-            'published_at' => $status === 'published'
-                ? ($knowledgeItem->published_at ?? now())
-                : null,
+            'status' => 'published',
+            'published_at' => $knowledgeItem->published_at ?? now(),
         ]);
 
         if ($knowledgeItem->isDirty('title')) {
@@ -278,6 +271,14 @@ class KnowledgeItemController extends Controller
         return response()->json([
             'html' => $html,
         ]);
+    }
+
+    /**
+     * Resolve a user's strict global access level.
+     */
+    private function resolveAccessLevel(User $user): string
+    {
+        return $user->effectiveKnowledgeAccessLevel() ?? 'viewer';
     }
 
     /**

@@ -14,14 +14,77 @@ import {
     SeparatorHorizontal,
     Undo2,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { highlightMarkdownCodeBlocks } from '@/lib/highlight';
+import { markdownPreview } from '@/routes/knowledge-items';
+import { csrfCookie } from '@/routes/sanctum';
 
 type EditorMode = 'visual' | 'raw' | 'preview';
 
 const EMPTY_PREVIEW_HTML =
     '<p class="text-sm text-muted-foreground">Start writing content to see a formatted preview.</p>';
+
+function resolveXsrfTokenFromCookie(): string {
+    if (typeof document === 'undefined') {
+        return '';
+    }
+
+    const xsrfCookie = document.cookie
+        .split(';')
+        .map((segment) => segment.trim())
+        .find((segment) => segment.startsWith('XSRF-TOKEN='));
+
+    if (xsrfCookie) {
+        const encodedValue = xsrfCookie.slice('XSRF-TOKEN='.length);
+        let tokenFromCookie = '';
+
+        try {
+            tokenFromCookie = decodeURIComponent(encodedValue).trim();
+        } catch {
+            tokenFromCookie = '';
+        }
+
+        if (tokenFromCookie !== '') {
+            return tokenFromCookie;
+        }
+    }
+
+    return '';
+}
+
+function resolveCsrfTokenFromMeta(): string {
+    if (typeof document === 'undefined') {
+        return '';
+    }
+
+    const tokenFromMeta = document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute('content');
+
+    if (typeof tokenFromMeta === 'string' && tokenFromMeta.trim() !== '') {
+        return tokenFromMeta;
+    }
+
+    return '';
+}
+
+async function refreshCsrfToken(signal: AbortSignal): Promise<void> {
+    const response = await fetch(csrfCookie.url(), {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        signal,
+    });
+
+    if (!response.ok) {
+        throw new Error('Session expired. Refresh the page and try again.');
+    }
+}
 
 function markdownTableFromElement(table: HTMLTableElement): string {
     const rows = Array.from(table.querySelectorAll('tr')).map((row) =>
@@ -64,7 +127,7 @@ function inlineNodeToMarkdown(node: Node): string {
     const tag = node.tagName.toLowerCase();
 
     if (tag === 'br') {
-        return '\n';
+        return '  \n';
     }
 
     if (tag === 'strong' || tag === 'b') {
@@ -249,20 +312,6 @@ export default function KnowledgeMarkdownEditor({
     const savedRangeRef = useRef<Range | null>(null);
     const hasVisualInputRef = useRef(false);
 
-    const csrfToken = useMemo(() => {
-        if (typeof document === 'undefined') {
-            return '';
-        }
-
-        const tokenElement = document.querySelector('meta[name="csrf-token"]');
-
-        if (!tokenElement) {
-            return '';
-        }
-
-        return tokenElement.getAttribute('content') ?? '';
-    }, []);
-
     useEffect(() => {
         if (disabled && mode !== 'preview') {
             setMode('preview');
@@ -289,29 +338,97 @@ export default function KnowledgeMarkdownEditor({
                 const body = new URLSearchParams({
                     content_markdown: value,
                 }).toString();
-
-                const response = await fetch('/knowledge-items/markdown-preview', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                const renderPreviewRequest = async (
+                    allowCsrfRetry: boolean,
+                ): Promise<string> => {
+                    const headers: HeadersInit = {
+                        'Content-Type':
+                            'application/x-www-form-urlencoded;charset=UTF-8',
                         Accept: 'application/json',
                         'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRF-TOKEN': csrfToken,
-                    },
-                    body,
-                    signal: controller.signal,
-                });
+                    };
 
-                if (!response.ok) {
-                    if (response.status === 419) {
-                        throw new Error('Session expired. Refresh the page and try again.');
+                    const xsrfToken = resolveXsrfTokenFromCookie();
+                    if (xsrfToken !== '') {
+                        headers['X-XSRF-TOKEN'] = xsrfToken;
+                    } else {
+                        const csrfToken = resolveCsrfTokenFromMeta();
+                        if (csrfToken !== '') {
+                            headers['X-CSRF-TOKEN'] = csrfToken;
+                        }
                     }
 
-                    throw new Error('Failed to render preview.');
-                }
+                    const response = await fetch(markdownPreview.url(), {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers,
+                        body,
+                        signal: controller.signal,
+                    });
 
-                const payload = (await response.json()) as { html?: string };
-                setPreviewHtml(payload.html ?? EMPTY_PREVIEW_HTML);
+                    if (response.redirected) {
+                        const redirectedPathname = new URL(
+                            response.url,
+                            window.location.origin,
+                        ).pathname;
+
+                        if (redirectedPathname.startsWith('/login')) {
+                            throw new Error(
+                                'Session expired. Refresh the page and try again.',
+                            );
+                        }
+                    }
+
+                    const contentType = response.headers.get('content-type') ?? '';
+                    const isJsonResponse =
+                        contentType.includes('application/json');
+                    const payload = isJsonResponse
+                        ? ((await response.json()) as {
+                              html?: string;
+                              message?: string;
+                              errors?: Record<string, string[]>;
+                          })
+                        : null;
+
+                    if (!response.ok) {
+                        if (response.status === 419 && allowCsrfRetry) {
+                            await refreshCsrfToken(controller.signal);
+
+                            return renderPreviewRequest(false);
+                        }
+
+                        if (response.status === 419) {
+                            throw new Error(
+                                'Session expired. Refresh the page and try again.',
+                            );
+                        }
+
+                        const validationError = payload?.errors
+                            ? Object.values(payload.errors).flat()[0]
+                            : null;
+
+                        if (
+                            typeof validationError === 'string' &&
+                            validationError !== ''
+                        ) {
+                            throw new Error(validationError);
+                        }
+
+                        if (
+                            typeof payload?.message === 'string' &&
+                            payload.message !== ''
+                        ) {
+                            throw new Error(payload.message);
+                        }
+
+                        throw new Error('Failed to render preview.');
+                    }
+
+                    return typeof payload?.html === 'string' ? payload.html : '';
+                };
+
+                const html = await renderPreviewRequest(true);
+                setPreviewHtml(html === '' ? EMPTY_PREVIEW_HTML : html);
             } catch (error) {
                 if (controller.signal.aborted) {
                     return;
@@ -333,7 +450,7 @@ export default function KnowledgeMarkdownEditor({
             controller.abort();
             window.clearTimeout(timeout);
         };
-    }, [csrfToken, value]);
+    }, [value]);
 
     useEffect(() => {
         if (isVisualFocused && hasVisualInputRef.current) {
@@ -575,7 +692,7 @@ export default function KnowledgeMarkdownEditor({
             ) : null}
 
             {mode === 'raw' ? (
-                <textarea
+                <Textarea
                     ref={rawTextareaRef}
                     value={value}
                     onChange={(event) => onChange(event.target.value)}

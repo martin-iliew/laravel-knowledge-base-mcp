@@ -103,17 +103,14 @@ class KnowledgeItem extends Model
     }
 
     /**
-     * Scope items visible to the given user (owned + account-shared).
+     * Scope items visible to the given user using strict global access.
      */
     public function scopeAccessibleTo(Builder $query, User $user): Builder
     {
-        return $query->where(function (Builder $accessibleQuery) use ($user): void {
-            $accessibleQuery
-                ->where('created_by', $user->id)
-                ->orWhereIn(
-                    'created_by',
-                    $user->knowledgeAccessReceived()->select('owner_user_id')
-                );
-        });
+        if ($user->hasGlobalKnowledgeReadAccess()) {
+            return $query;
+        }
+
+        return $query->where('created_by', $user->id);
     }
 }

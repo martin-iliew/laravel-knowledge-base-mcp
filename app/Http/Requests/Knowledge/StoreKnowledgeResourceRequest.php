@@ -22,7 +22,6 @@ class StoreKnowledgeResourceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'type' => ['required', 'in:link,file'],
             'label' => ['nullable', 'string', 'max:255'],
             'url' => ['nullable', 'url', 'required_if:type,link'],

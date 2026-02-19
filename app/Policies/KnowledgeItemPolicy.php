@@ -2,7 +2,6 @@
 
 namespace App\Policies;
 
-use App\Models\KnowledgeAccountAccess;
 use App\Models\KnowledgeItem;
 use App\Models\User;
 
@@ -81,11 +80,7 @@ class KnowledgeItemPolicy
             return true;
         }
 
-        return KnowledgeAccountAccess::query()
-            ->where('owner_user_id', (int) $knowledgeItem->created_by)
-            ->where('grantee_user_id', (int) $user->id)
-            ->whereIn('permission', ['viewer', 'editor'])
-            ->exists();
+        return $user->hasGlobalKnowledgeReadAccess();
     }
 
     /**
@@ -97,10 +92,6 @@ class KnowledgeItemPolicy
             return true;
         }
 
-        return KnowledgeAccountAccess::query()
-            ->where('owner_user_id', (int) $knowledgeItem->created_by)
-            ->where('grantee_user_id', (int) $user->id)
-            ->where('permission', 'editor')
-            ->exists();
+        return $user->hasGlobalKnowledgeEditAccess();
     }
 }

@@ -75,4 +75,43 @@ class User extends Authenticatable
     {
         return $this->hasMany(KnowledgeAccountAccess::class, 'grantee_user_id');
     }
+
+    /**
+     * Resolve the strict global access level from received grants.
+     * Returns editor when any editor grant exists, otherwise viewer.
+     */
+    public function effectiveKnowledgeAccessLevel(): ?string
+    {
+        $permissions = $this->knowledgeAccessReceived()
+            ->pluck('permission')
+            ->filter(fn ($permission): bool => is_string($permission) && in_array($permission, ['viewer', 'editor'], true))
+            ->unique()
+            ->values();
+
+        if ($permissions->isEmpty()) {
+            return null;
+        }
+
+        if ($permissions->contains('editor')) {
+            return 'editor';
+        }
+
+        return 'viewer';
+    }
+
+    /**
+     * Determine whether this account can read all knowledge items globally.
+     */
+    public function hasGlobalKnowledgeReadAccess(): bool
+    {
+        return $this->effectiveKnowledgeAccessLevel() !== null;
+    }
+
+    /**
+     * Determine whether this account can edit all knowledge items globally.
+     */
+    public function hasGlobalKnowledgeEditAccess(): bool
+    {
+        return $this->effectiveKnowledgeAccessLevel() === 'editor';
+    }
 }

@@ -30,7 +30,7 @@ class KnowledgeBaseController extends Controller
         $query = trim((string) ($validated['query'] ?? ''));
         $category = $this->normalizeOptionalString($validated['category'] ?? null);
         $tags = $this->normalizeTagsFromInput((string) ($validated['tags'] ?? ''));
-        $includeDrafts = $request->boolean('include_drafts', true);
+        $includeDrafts = $request->boolean('include_drafts', false);
         $limit = max(1, min((int) ($validated['limit'] ?? 5), 10));
 
         $results = [];
@@ -69,7 +69,7 @@ class KnowledgeBaseController extends Controller
                 ->get()
         );
 
-        return Inertia::render('knowledge/base', [
+        return Inertia::render('knowledge-base/index', [
             'results' => $results,
             'latestItems' => $latestItems->map(function (KnowledgeItem $item): array {
                 return [
@@ -91,10 +91,6 @@ class KnowledgeBaseController extends Controller
                 'limit' => $limit,
             ],
             'categoryOptions' => $categoryTree->pluck('name')->values(),
-            'tagOptions' => $categoryTree
-                ->flatMap(fn (array $node): Collection => collect($node['children'] ?? [])->pluck('name'))
-                ->unique()
-                ->values(),
             'categoryTree' => $categoryTree->values(),
         ]);
     }
@@ -147,11 +143,9 @@ class KnowledgeBaseController extends Controller
         $userId = (int) $user->id;
         $accessLevel = $ownerId === $userId
             ? 'owner'
-            : ((string) ($user->knowledgeAccessReceived()
-                ->where('owner_user_id', $ownerId)
-                ->value('permission') ?? 'viewer'));
+            : $this->resolveAccessLevel($user);
 
-        return Inertia::render('knowledge/show', [
+        return Inertia::render('knowledge-base/show', [
             'item' => [
                 'id' => $knowledgeItem->id,
                 'slug' => $knowledgeItem->slug,
@@ -283,5 +277,13 @@ class KnowledgeBaseController extends Controller
             })
             ->sortBy(fn (array $node): string => $node['name'] === 'Uncategorized' ? 'zzzzzz' : mb_strtolower($node['name']))
             ->values();
+    }
+
+    /**
+     * Resolve a user's strict global access level.
+     */
+    private function resolveAccessLevel(User $user): string
+    {
+        return $user->effectiveKnowledgeAccessLevel() ?? 'viewer';
     }
 }

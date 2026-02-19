@@ -20,7 +20,7 @@ class CodeExampleController extends Controller
         $this->authorize('create', [CodeExample::class, $knowledgeItem]);
 
         $validated = $request->validated();
-        $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
+        $validated['sort_order'] = $this->nextSortOrder($knowledgeItem);
         $validated['title'] = $this->normalizeOptionalString($validated['title'] ?? null);
         $validated['filename'] = $this->normalizeOptionalString($validated['filename'] ?? null);
         $validated['description'] = $this->normalizeOptionalString($validated['description'] ?? null);
@@ -43,7 +43,6 @@ class CodeExampleController extends Controller
         $this->authorize('update', $codeExample);
 
         $validated = $request->validated();
-        $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
         $validated['title'] = $this->normalizeOptionalString($validated['title'] ?? null);
         $validated['filename'] = $this->normalizeOptionalString($validated['filename'] ?? null);
         $validated['description'] = $this->normalizeOptionalString($validated['description'] ?? null);
@@ -79,5 +78,21 @@ class CodeExampleController extends Controller
         $normalized = trim($value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * Calculate the next append-only sort order for a knowledge item's code examples.
+     */
+    private function nextSortOrder(KnowledgeItem $knowledgeItem): int
+    {
+        $maxSortOrder = $knowledgeItem
+            ->codeExamples()
+            ->max('sort_order');
+
+        if ($maxSortOrder === null) {
+            return 0;
+        }
+
+        return min(65535, ((int) $maxSortOrder) + 1);
     }
 }

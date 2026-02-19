@@ -471,15 +471,19 @@ class KnowledgeSearchService
             return null;
         }
 
-        return KnowledgeAccountAccess::query()
+        $permissions = KnowledgeAccountAccess::query()
             ->where('grantee_user_id', $userId)
-            ->whereIn('permission', ['viewer', 'editor'])
-            ->pluck('owner_user_id')
-            ->map(fn ($ownerId): int => (int) $ownerId)
-            ->push($userId)
+            ->pluck('permission')
+            ->filter(fn ($permission): bool => is_string($permission) && in_array($permission, ['viewer', 'editor'], true))
             ->unique()
             ->values()
             ->all();
+
+        if ($permissions !== []) {
+            return null;
+        }
+
+        return [$userId];
     }
 
     /**
