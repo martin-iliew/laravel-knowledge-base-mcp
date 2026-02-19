@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import { useState } from 'react';
+import ConfirmActionDialog from '@/components/confirm-action-dialog';
 import FormSelect from '@/components/form-select';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
@@ -9,12 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import settings from '@/routes/settings';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Knowledge access',
-        href: '/settings/knowledge-access',
+        href: settings.knowledgeAccess.index(),
     },
 ];
 
@@ -83,8 +85,7 @@ export default function KnowledgeAccessSettings({
                         </CardHeader>
                         <CardContent>
                             <Form
-                                action="/settings/knowledge-access"
-                                method="post"
+                                {...settings.knowledgeAccess.store.form()}
                                 options={{ preserveScroll: true }}
                                 className="grid gap-4 sm:grid-cols-[1fr_auto_auto]"
                             >
@@ -163,8 +164,7 @@ export default function KnowledgeAccessSettings({
 
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <Form
-                                                    action={`/settings/knowledge-access/${grant.id}`}
-                                                    method="patch"
+                                                    {...settings.knowledgeAccess.update.form(grant.id)}
                                                     options={{ preserveScroll: true }}
                                                     className="flex items-center gap-2"
                                                 >
@@ -207,26 +207,13 @@ export default function KnowledgeAccessSettings({
                                                     )}
                                                 </Form>
 
-                                                <Form
-                                                    action={`/settings/knowledge-access/${grant.id}`}
-                                                    method="delete"
-                                                    onBefore={() =>
-                                                        window.confirm(
-                                                            'Revoke this access grant?',
-                                                        )
-                                                    }
-                                                >
-                                                    {({ processing }) => (
-                                                        <Button
-                                                            type="submit"
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            disabled={processing}
-                                                        >
-                                                            Revoke
-                                                        </Button>
-                                                    )}
-                                                </Form>
+                                                <ConfirmActionDialog
+                                                    form={settings.knowledgeAccess.destroy.form(grant.id)}
+                                                    title="Revoke access grant?"
+                                                    description="This teammate will immediately lose access to your knowledge base."
+                                                    triggerLabel="Revoke"
+                                                    confirmLabel="Revoke access"
+                                                />
                                             </div>
                                         </div>
                                     ))

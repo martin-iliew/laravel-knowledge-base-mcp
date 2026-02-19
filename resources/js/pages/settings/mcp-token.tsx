@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import { useState } from 'react';
+import ConfirmActionDialog from '@/components/confirm-action-dialog';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -9,12 +10,13 @@ import { Label } from '@/components/ui/label';
 import { useClipboard } from '@/hooks/use-clipboard';
 import AppLayout from '@/layouts/app-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import settings from '@/routes/settings';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Token settings',
-        href: '/settings/mcp-token',
+        href: settings.mcpToken.index(),
     },
 ];
 
@@ -64,8 +66,7 @@ export default function McpTokenSettings({
                         </CardHeader>
                         <CardContent>
                             <Form
-                                action="/settings/mcp-token"
-                                method="post"
+                                {...settings.mcpToken.store.form()}
                                 options={{ preserveScroll: true }}
                                 className="space-y-4"
                             >
@@ -155,26 +156,13 @@ export default function McpTokenSettings({
                                                     {formatDate(token.last_used_at)}.
                                                 </p>
                                             </div>
-                                            <Form
-                                                action={`/settings/mcp-token/${token.id}`}
-                                                method="delete"
-                                                onBefore={() =>
-                                                    window.confirm(
-                                                        'Revoke this token? Clients using it will lose access immediately.',
-                                                    )
-                                                }
-                                            >
-                                                {({ processing }) => (
-                                                    <Button
-                                                        type="submit"
-                                                        size="sm"
-                                                        variant="destructive"
-                                                        disabled={processing}
-                                                    >
-                                                        Revoke
-                                                    </Button>
-                                                )}
-                                            </Form>
+                                            <ConfirmActionDialog
+                                                form={settings.mcpToken.destroy.form(token.id)}
+                                                title="Revoke token?"
+                                                description="Clients using this token will lose access immediately."
+                                                triggerLabel="Revoke"
+                                                confirmLabel="Revoke token"
+                                            />
                                         </div>
                                     ))
                                 )}
