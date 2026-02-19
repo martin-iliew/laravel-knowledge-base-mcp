@@ -77,6 +77,9 @@ final class KnowledgeTestFactory
     {
         config([
             'knowledge.search_v2.enabled' => true,
+            'knowledge.search_v2.profiles.search_v2_single_token.dense_k' => 0,
+            'knowledge.search_v2.profiles.search_v2_short.dense_k' => 0,
+            'knowledge.search_v2.profiles.search_v2_long.dense_k' => 0,
             'knowledge.hybrid.enable_ai_rerank' => false,
             'knowledge.hybrid.dense_k' => 0,
             'knowledge.hybrid.sparse_k' => 20,
