@@ -4,10 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class KnowledgeItem extends Model
 {
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
         'slug',
         'title',
@@ -29,6 +35,11 @@ class KnowledgeItem extends Model
         'embedding_dimensions',
     ];
 
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
     protected function casts(): array
     {
         return [
@@ -39,26 +50,67 @@ class KnowledgeItem extends Model
         ];
     }
 
+    /**
+     * Chunks belonging to this knowledge item.
+     */
     public function chunks(): HasMany
     {
         return $this->hasMany(KnowledgeChunk::class);
     }
 
+    /**
+     * Code examples attached to this knowledge item.
+     */
     public function codeExamples(): HasMany
     {
         return $this->hasMany(CodeExample::class);
     }
 
+    /**
+     * Resources (links/files) attached to this knowledge item.
+     */
     public function resources(): HasMany
     {
         return $this->hasMany(KnowledgeResource::class);
     }
 
-    public function scopePublished(Builder $q): Builder
+    /**
+     * Owning author account that created this item.
+     */
+    public function creator(): BelongsTo
     {
-        return $q->where('status', 'published')
-            ->where(function (Builder $q) {
-                $q->whereNull('published_at')->orWhere('published_at', '<=', now());
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Reviewer account that approved this item, when present.
+     */
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /**
+     * Scope items that are published and visible.
+     * Treats null published_at as immediately visible.
+     */
+    public function scopePublished(Builder $query): Builder
+    {
+        return $query->where('status', 'published')
+            ->where(function (Builder $query) {
+                $query->whereNull('published_at')->orWhere('published_at', '<=', now());
             });
+    }
+
+    /**
+     * Scope items visible to the given user using strict global access.
+     */
+    public function scopeAccessibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->hasGlobalKnowledgeReadAccess()) {
+            return $query;
+        }
+
+        return $query->where('created_by', $user->id);
     }
 }

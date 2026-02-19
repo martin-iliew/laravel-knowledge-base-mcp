@@ -2,12 +2,20 @@
 
 use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
+use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Features;
 
 test('login screen can be rendered', function () {
     $response = $this->get(route('login'));
 
     $response->assertOk();
+
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('auth/login')
+        ->has('demoAccounts', 7)
+        ->where('demoAccounts.0.email', 'owner@acme.test')
+        ->where('demoAccounts.6.email', 'test@example.com')
+    );
 });
 
 test('users can authenticate using the login screen', function () {

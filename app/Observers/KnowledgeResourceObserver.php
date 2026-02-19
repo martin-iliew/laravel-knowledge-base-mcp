@@ -2,40 +2,53 @@
 
 namespace App\Observers;
 
-use App\Jobs\SyncKnowledgeItemIndex;
-use App\Models\KnowledgeItem;
 use App\Models\KnowledgeResource;
+use App\Observers\Concerns\KnowledgeIndexingObserverHelpers;
 
 class KnowledgeResourceObserver
 {
-    public function saving(KnowledgeResource $r): void
+    use KnowledgeIndexingObserverHelpers; 
+
+    /**
+     * Persist a stable hash of extracted text (when present).
+     *
+     * @param KnowledgeResource $resource
+     * @return void
+     */
+    public function saving(KnowledgeResource $resource): void
     {
-        if ($r->extracted_text) {
-            $r->extracted_hash = hash('sha256', $this->normalize($r->extracted_text));
+        if ($resource->extracted_text) {
+            $resource->extracted_hash = $this->sha256Normalized($resource->extracted_text); 
         }
     }
 
-    public function saved(KnowledgeResource $r): void
+    /**
+     * Bump the parent item's index_version and enqueue re-indexing after commit.
+     *
+     * @param KnowledgeResource $resource
+     * @return void
+     */
+    public function saved(KnowledgeResource $resource): void
     {
-        $this->bumpAndDispatch($r->knowledge_item_id);
+        if (! $resource->knowledge_item_id) { 
+            return;
+        }
+
+        $this->bumpAndDispatchIndexSync((int) $resource->knowledge_item_id); 
     }
 
-    public function deleted(KnowledgeResource $r): void
+    /**
+     * Bump the parent item's index_version and enqueue re-indexing after commit.
+     *
+     * @param KnowledgeResource $resource
+     * @return void
+     */
+    public function deleted(KnowledgeResource $resource): void
     {
-        $this->bumpAndDispatch($r->knowledge_item_id);
-    }
+        if (! $resource->knowledge_item_id) { 
+            return;
+        }
 
-    private function bumpAndDispatch(int $itemId): void
-    {
-        KnowledgeItem::query()->whereKey($itemId)->increment('index_version');
-        $v = (int) KnowledgeItem::query()->whereKey($itemId)->value('index_version');
-
-        SyncKnowledgeItemIndex::dispatch($itemId, $v)->afterCommit();
-    }
-
-    private function normalize(string $s): string
-    {
-        $t = preg_replace('/\r\n?/', "\n", $s) ?? $s;
-        return trim($t);
+        $this->bumpAndDispatchIndexSync((int) $resource->knowledge_item_id); 
     }
 }

@@ -1,0 +1,17 @@
+{
+    "agents": [
+        "codex"
+    ],
+    "guidelines": true,
+    "herd_mcp": false,
+    "mcp": true,
+    "nightwatch_mcp": false,
+    "sail": true,
+    "skills": [
+        "mcp-development",
+        "wayfinder-development",
+        "pest-testing",
+        "inertia-react-development",
+        "tailwindcss-development"
+    ]
+}

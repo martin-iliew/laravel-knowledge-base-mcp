@@ -5,7 +5,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration 
+{
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::create('knowledge_items', function (Blueprint $table) {
@@ -50,7 +54,10 @@ return new class extends Migration {
             CHECK (chunk_size > 0 AND chunk_overlap >= 0 AND chunk_overlap < chunk_size)
         ");
     }
-
+    
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::dropIfExists('knowledge_items');

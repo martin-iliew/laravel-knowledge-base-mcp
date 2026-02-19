@@ -1,6 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid } from 'lucide-react';
-import { NavFooter } from '@/components/nav-footer';
+import { Database, LayoutGrid, PlusCircle, Settings as SettingsIcon } from 'lucide-react';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -13,6 +12,9 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as knowledgeBaseIndex } from '@/routes/knowledge-base';
+import { create as createKnowledgeItem } from '@/routes/knowledge-items';
+import { edit as editProfile } from '@/routes/profile';
 import type { NavItem } from '@/types';
 import AppLogo from './app-logo';
 
@@ -22,20 +24,23 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
+    {
+        title: 'Knowledge Base',
+        href: knowledgeBaseIndex(),
+        icon: Database,
+    },
+    {
+        title: 'New Item',
+        href: createKnowledgeItem(),
+        icon: PlusCircle,
+    },
+    {
+        title: 'Settings',
+        href: editProfile(),
+        icon: SettingsIcon,
+    },
 ];
 
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: Folder,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
-        icon: BookOpen,
-    },
-];
 
 export function AppSidebar() {
     return (
@@ -57,7 +62,6 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

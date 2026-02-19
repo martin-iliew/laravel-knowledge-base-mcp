@@ -3,56 +3,99 @@
 namespace App\Mcp\Tools;
 
 use App\Models\KnowledgeItem;
+use App\Models\User;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Str;
+use Laravel\Mcp\Request;
+use Laravel\Mcp\Response;
+use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
-use Laravel\Mcp\Server\Request;
-use Laravel\Mcp\Server\Response;
-use Laravel\Mcp\Server\Schemas\JsonSchema;
 
 class CreateKnowledgeEntryTool extends Tool
 {
-    protected string $name = 'create-knowledge-entry';
-    protected string $description = 'Create a draft knowledge item for the authenticated user.';
-    
+    /**
+     * The tool's name.
+     */
+    protected string $name = 'create_knowledge_entry';
+
+    /**
+     * The tool's description.
+     */
+    protected string $description = 'Create a draft knowledge item.';
+
+    /**
+     * Get the tool's input schema.
+     *
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
     public function schema(JsonSchema $schema): array
     {
-        return $schema->object([
-            'title' => $schema->string()->minLength(1),
-            'content_markdown' => $schema->string()->minLength(1),
-            'category' => $schema->string()->nullable(),
-            'tags' => $schema->array($schema->string())->default([]),
-        ]);
+        return [
+            'title' => $schema->string()
+                ->min(1)
+                ->description('Knowledge item title.')
+                ->required(),
+
+            'content_markdown' => $schema->string()
+                ->min(1)
+                ->description('Markdown body for the knowledge item.')
+                ->required(),
+
+            'category' => $schema->string()
+                ->description('Optional category for filtering.')
+                ->nullable(),
+
+            'tags' => $schema->array()
+                ->items($schema->string())
+                ->description('Optional tags (AND semantics in retrieval).')
+                ->default([]),
+        ];
     }
 
+    /**
+     * Get the tool's output schema.
+     *
+     * @return array<string, \Illuminate\JsonSchema\Types\Type>
+     */
     public function outputSchema(JsonSchema $schema): array
     {
-        return $schema->object([
-            'id' => $schema->integer(),
-            'slug' => $schema->string(),
-            'status' => $schema->string(),
-        ]);
+        return [
+            'id' => $schema->integer()
+                ->description('Created knowledge item ID.')
+                ->required(),
+
+            'slug' => $schema->string()
+                ->description('Final unique slug.')
+                ->required(),
+
+            'status' => $schema->string()
+                ->enum(['draft'])
+                ->description('Always "draft" on creation.')
+                ->required(),
+        ];
     }
 
-    public function handle(Request $request): Response
+    /**
+     * Handle the tool request.
+     */
+    public function handle(Request $request): Response|ResponseFactory
     {
-        $title = (string) $request->input('title');
-        $content = (string) $request->input('content_markdown');
-        $category = $request->input('category');
-        $tags = (array) $request->input('tags', []);
+        $title = trim((string) $request->get('title', ''));
+        $content = (string) $request->get('content_markdown', '');
+        $category = $request->get('category');
+        $tags = array_values(array_filter(
+            $request->array('tags'),
+            fn ($tag): bool => is_string($tag) && trim($tag) !== ''
+        ));
 
-        $slugBase = Str::slug($title);
-        $slug = $slugBase;
-        $i = 2;
+        $requireAuth = (bool) config('knowledge.mcp.require_auth');
+        $userId = $this->resolveUserId($request);
 
-        $user = $request->user(); 
-        if (! $user) { 
-            return Response::error('Unauthorized.');
+        if (($requireAuth && ! $request->user()) || $userId === null) {
+            return Response::error('Unauthorized. Configure KB_MCP_DEFAULT_USER_ID or use Sanctum auth.');
         }
 
-        while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
-            $slug = $slugBase . '-' . $i;
-            $i++;
-        }
+        $slug = $this->buildUniqueSlug($title);
 
         $item = KnowledgeItem::query()->create([
             'slug' => $slug,
@@ -62,7 +105,7 @@ class CreateKnowledgeEntryTool extends Tool
             'tags' => $tags,
             'source' => 'ai',
             'status' => 'draft',
-            'created_by' => $user->id,
+            'created_by' => $userId,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
             'embedding_dimensions' => (int) config('knowledge.defaults.embedding_dimensions'),
@@ -73,5 +116,47 @@ class CreateKnowledgeEntryTool extends Tool
             'slug' => $item->slug,
             'status' => $item->status,
         ]);
+    }
+
+    /**
+     * Resolve the acting user ID from auth context or configured default.
+     */
+    private function resolveUserId(Request $request): ?int
+    {
+        if ($user = $request->user()) {
+            return (int) $user->id;
+        }
+
+        $defaultUserId = config('knowledge.mcp.default_user_id');
+
+        if (! is_numeric($defaultUserId)) {
+            return null;
+        }
+
+        $id = (int) $defaultUserId;
+
+        return User::query()->whereKey($id)->exists() ? $id : null;
+    }
+
+    /**
+     * Build a unique slug with numeric suffixes when collisions exist.
+     */
+    private function buildUniqueSlug(string $title): string
+    {
+        $slugBase = Str::slug($title);
+
+        if ($slugBase === '') {
+            $slugBase = 'knowledge-entry';
+        }
+
+        $slug = $slugBase;
+        $suffix = 2;
+
+        while (KnowledgeItem::query()->where('slug', $slug)->exists()) {
+            $slug = $slugBase.'-'.$suffix;
+            $suffix++;
+        }
+
+        return $slug;
     }
 }

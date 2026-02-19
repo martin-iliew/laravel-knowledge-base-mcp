@@ -10,7 +10,8 @@
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
         "types": "tsc --noEmit",
-        "setup": "set -e; ./vendor/bin/sail down -v; ./vendor/bin/sail up -d; ./vendor/bin/sail exec -T pgsql sh -c 'i=0; while [ $i -lt 60 ]; do pg_isready >/dev/null 2>&1 && exit 0; i=$((i+1)); sleep 1; done; exit 1'; ./vendor/bin/sail artisan key:generate; ./vendor/bin/sail artisan migrate --seed; ./vendor/bin/sail npm install; ./vendor/bin/sail npm run dev"
+        "setup:dev": "set -e; ./vendor/bin/sail down -v; ./vendor/bin/sail up -d; ./vendor/bin/sail exec -T pgsql sh -c 'i=0; while [ $i -lt 60 ]; do pg_isready >/dev/null 2>&1 && exit 0; i=$((i+1)); sleep 1; done; exit 1'; ./vendor/bin/sail artisan key:generate; ./vendor/bin/sail artisan migrate --seed; ./vendor/bin/sail npm install; ./vendor/bin/sail npm run dev",
+        "setup:build": "set -e; ./vendor/bin/sail down -v; ./vendor/bin/sail up -d; ./vendor/bin/sail exec -T pgsql sh -c 'i=0; while [ $i -lt 60 ]; do pg_isready >/dev/null 2>&1 && exit 0; i=$((i+1)); sleep 1; done; exit 1'; ./vendor/bin/sail artisan key:generate; ./vendor/bin/sail artisan migrate --seed; ./vendor/bin/sail npm ci; ./vendor/bin/sail npm run build"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
@@ -51,6 +52,7 @@
         "clsx": "^2.1.1",
         "concurrently": "^9.0.1",
         "globals": "^15.14.0",
+        "highlight.js": "^11.11.1",
         "input-otp": "^1.4.2",
         "laravel-vite-plugin": "^2.0",
         "lucide-react": "^0.475.0",
