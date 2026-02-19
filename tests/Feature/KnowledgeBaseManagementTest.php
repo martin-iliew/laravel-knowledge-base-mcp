@@ -6,28 +6,16 @@ use App\Models\KnowledgeAccountAccess;
 use App\Models\KnowledgeItem;
 use App\Models\KnowledgeResource;
 use App\Models\User;
-use App\Services\KnowledgeSearchService;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
-
-function createKnowledgeItemForUser(User $user, string $slug, array $attributes = []): KnowledgeItem
-{
-    return KnowledgeItem::withoutEvents(fn () => KnowledgeItem::query()->create(array_merge([
-        'slug' => $slug,
-        'title' => 'Item '.$slug,
-        'content_markdown' => '# Content',
-        'status' => 'draft',
-        'source' => 'human',
-        'created_by' => $user->id,
-    ], $attributes)));
-}
+use Tests\Support\KnowledgeTestFactory;
 
 test('dashboard shows summary counts for accessible knowledge items', function () {
     $owner = User::factory()->create();
     $otherUser = User::factory()->create();
 
-    $mine = createKnowledgeItemForUser($owner, 'mine-item');
-    createKnowledgeItemForUser($otherUser, 'other-item');
+    $mine = KnowledgeTestFactory::createOwnedItem($owner, 'mine-item');
+    KnowledgeTestFactory::createOwnedItem($otherUser, 'other-item');
 
     $this->actingAs($owner)
         ->get(route('dashboard'))
@@ -46,8 +34,8 @@ test('knowledge base page shows latest cards only for accessible items', functio
     $owner = User::factory()->create();
     $otherUser = User::factory()->create();
 
-    $mine = createKnowledgeItemForUser($owner, 'mine-card');
-    createKnowledgeItemForUser($otherUser, 'other-card');
+    $mine = KnowledgeTestFactory::createOwnedItem($owner, 'mine-card');
+    KnowledgeTestFactory::createOwnedItem($otherUser, 'other-card');
 
     $this->actingAs($owner)
         ->get(route('knowledge-base.index'))
@@ -55,6 +43,60 @@ test('knowledge base page shows latest cards only for accessible items', functio
             ->component('knowledge/base')
             ->has('latestItems', 1)
             ->where('latestItems.0.id', $mine->id)
+        );
+});
+
+test('knowledge base list supports category and tag filters without a query', function () {
+    $owner = User::factory()->create();
+
+    $matchingItem = KnowledgeTestFactory::createOwnedItem($owner, 'laravel-routes', [
+        'category' => 'Laravel',
+        'tags' => ['mcp', 'routes'],
+    ]);
+
+    KnowledgeTestFactory::createOwnedItem($owner, 'laravel-api', [
+        'category' => 'Laravel',
+        'tags' => ['mcp'],
+    ]);
+
+    KnowledgeTestFactory::createOwnedItem($owner, 'billing-routes', [
+        'category' => 'Billing',
+        'tags' => ['mcp', 'routes'],
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('knowledge-base.index', [
+            'category' => 'Laravel',
+            'tags' => 'mcp, routes',
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge/base')
+            ->has('results', 0)
+            ->has('latestItems', 1)
+            ->where('latestItems.0.id', $matchingItem->id)
+        );
+});
+
+test('knowledge base list hides drafts when include_drafts is disabled', function () {
+    $owner = User::factory()->create();
+
+    KnowledgeTestFactory::createOwnedItem($owner, 'draft-only', [
+        'status' => 'draft',
+    ]);
+
+    $publishedItem = KnowledgeTestFactory::createOwnedItem($owner, 'published-only', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('knowledge-base.index', [
+            'include_drafts' => 0,
+        ]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge/base')
+            ->has('latestItems', 1)
+            ->where('latestItems.0.id', $publishedItem->id)
         );
 });
 
@@ -72,7 +114,7 @@ test('knowledge item create form starts at details step', function () {
 
 test('knowledge item edit form supports details and enhancements steps', function () {
     $user = User::factory()->create();
-    $item = createKnowledgeItemForUser($user, 'multi-step-item');
+    $item = KnowledgeTestFactory::createOwnedItem($user, 'multi-step-item');
 
     $this->actingAs($user)
         ->get(route('knowledge-items.edit', $item))
@@ -142,7 +184,7 @@ test('knowledge markdown preview endpoint renders sanitized html', function () {
 test('knowledge item update and delete are owner only', function () {
     $owner = User::factory()->create();
     $otherUser = User::factory()->create();
-    $item = createKnowledgeItemForUser($owner, 'owner-item');
+    $item = KnowledgeTestFactory::createOwnedItem($owner, 'owner-item');
 
     $this->actingAs($otherUser)
         ->patch(route('knowledge-items.update', $item), [
@@ -161,7 +203,7 @@ test('knowledge item update and delete are owner only', function () {
 
 test('knowledge reader page is available for authorized user', function () {
     $user = User::factory()->create();
-    $item = createKnowledgeItemForUser($user, 'reader-item');
+    $item = KnowledgeTestFactory::createOwnedItem($user, 'reader-item');
 
     $this->actingAs($user)
         ->get(route('knowledge-base.show', $item))
@@ -175,7 +217,7 @@ test('knowledge reader page is available for authorized user', function () {
 test('code examples and resources are owner only', function () {
     $owner = User::factory()->create();
     $otherUser = User::factory()->create();
-    $item = createKnowledgeItemForUser($owner, 'owner-with-assets');
+    $item = KnowledgeTestFactory::createOwnedItem($owner, 'owner-with-assets');
 
     $codeExample = CodeExample::withoutEvents(fn () => CodeExample::query()->create([
         'knowledge_item_id' => $item->id,
@@ -205,71 +247,10 @@ test('code examples and resources are owner only', function () {
         ->assertForbidden();
 });
 
-test('knowledge search page calls hybrid retrieval with current user scope', function () {
-    $user = User::factory()->create();
-
-    $searchMock = Mockery::mock(KnowledgeSearchService::class);
-    $searchMock->shouldReceive('search')
-        ->once()
-        ->withArgs(function (
-            string $query,
-            int $limit,
-            ?string $category,
-            array $tags,
-            bool $includeDrafts,
-            ?int $userId
-        ) use ($user): bool {
-            return $query === 'routing'
-                && $limit === 5
-                && $category === 'Laravel'
-                && $tags === ['mcp', 'routes']
-                && $includeDrafts === true
-                && $userId === $user->id;
-        })
-        ->andReturn([
-            [
-                'item' => [
-                    'id' => 1,
-                    'slug' => 'routing',
-                    'title' => 'Routing',
-                    'category' => 'Laravel',
-                    'tags' => ['mcp', 'routes'],
-                    'updated_at' => now()->toIso8601String(),
-                ],
-                'snippets' => [],
-                'code_examples' => [],
-                'resources' => [],
-            ],
-        ]);
-
-    $this->app->instance(KnowledgeSearchService::class, $searchMock);
-
-    $this->actingAs($user)
-        ->get(route('knowledge-base.index', [
-            'query' => 'routing',
-            'category' => 'Laravel',
-            'tags' => 'mcp, routes',
-            'include_drafts' => 1,
-            'limit' => 5,
-        ]))
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
-            ->where('results.0.item.title', 'Routing')
-        );
-});
-
-test('legacy search route redirects to integrated knowledge base route', function () {
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->get(route('knowledge-search.index', ['query' => 'routing']))
-        ->assertRedirect(route('knowledge-base.index', ['query' => 'routing']));
-});
-
 test('shared viewer can see owner item on dashboard but cannot update it', function () {
     $owner = User::factory()->create();
     $viewer = User::factory()->create();
-    $item = createKnowledgeItemForUser($owner, 'shared-viewer-item');
+    $item = KnowledgeTestFactory::createOwnedItem($owner, 'shared-viewer-item');
 
     KnowledgeAccountAccess::query()->create([
         'owner_user_id' => $owner->id,
@@ -299,7 +280,7 @@ test('shared viewer can see owner item on dashboard but cannot update it', funct
 test('shared editor can update owner item and related assets', function () {
     $owner = User::factory()->create();
     $editor = User::factory()->create();
-    $item = createKnowledgeItemForUser($owner, 'shared-editor-item');
+    $item = KnowledgeTestFactory::createOwnedItem($owner, 'shared-editor-item');
 
     KnowledgeAccountAccess::query()->create([
         'owner_user_id' => $owner->id,

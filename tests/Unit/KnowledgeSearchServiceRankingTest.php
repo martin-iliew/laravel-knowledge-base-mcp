@@ -1,14 +1,7 @@
 <?php
 
 use App\Services\KnowledgeSearchService;
-
-function invokePrivateMethod(object $instance, string $method, array $args = []): mixed
-{
-    $reflection = new ReflectionMethod($instance, $method);
-    $reflection->setAccessible(true);
-
-    return $reflection->invokeArgs($instance, $args);
-}
+use Tests\Support\InvokesPrivateMethods;
 
 test('query profile routes one-token queries to lexical-first profile with no dense cutoff', function () {
     $service = new KnowledgeSearchService;
@@ -27,7 +20,7 @@ test('query profile routes one-token queries to lexical-first profile with no de
         'search_v2_long' => [],
     ];
 
-    $profile = invokePrivateMethod($service, 'queryProfile', ['stripe', $cfg]);
+    $profile = InvokesPrivateMethods::call($service, 'queryProfile', ['stripe', $cfg]);
 
     expect($profile['is_single_token'])->toBeTrue();
     expect($profile['sparse_weight'])->toBeGreaterThan($profile['dense_weight']);
@@ -50,7 +43,7 @@ test('query profile routes long questions to dense-heavy profile', function () {
         ],
     ];
 
-    $profile = invokePrivateMethod(
+    $profile = InvokesPrivateMethods::call(
         $service,
         'queryProfile',
         ['how do i generate and store embeddings in laravel with pgvector?', $cfg]
@@ -64,13 +57,13 @@ test('query profile routes long questions to dense-heavy profile', function () {
 test('weighted rrf prioritizes whichever signal has the higher weight', function () {
     $service = new KnowledgeSearchService;
 
-    $lexicalHeavy = invokePrivateMethod(
+    $lexicalHeavy = InvokesPrivateMethods::call(
         $service,
         'weightedRrf',
         [[1, 2, 3], [3, 2, 1], 0.25, 0.75, 60, 3]
     );
 
-    $denseHeavy = invokePrivateMethod(
+    $denseHeavy = InvokesPrivateMethods::call(
         $service,
         'weightedRrf',
         [[1, 2, 3], [3, 2, 1], 0.75, 0.25, 60, 3]
