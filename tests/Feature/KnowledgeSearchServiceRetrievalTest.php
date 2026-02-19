@@ -5,29 +5,30 @@ use App\Models\User;
 use App\Services\KnowledgeSearchService;
 use Tests\Support\KnowledgeTestFactory;
 
-test('search includes owner items shared with the active grantee', function () {
+test('search applies granted access globally across all owners', function () {
     KnowledgeTestFactory::configureLexicalSearchOnly();
 
-    $owner = User::factory()->create();
+    $grantOwner = User::factory()->create();
+    $unrelatedOwner = User::factory()->create();
     $grantee = User::factory()->create();
 
     KnowledgeAccountAccess::query()->create([
-        'owner_user_id' => $owner->id,
+        'owner_user_id' => $grantOwner->id,
         'grantee_user_id' => $grantee->id,
         'permission' => 'viewer',
     ]);
 
     $sharedItem = KnowledgeTestFactory::createIndexedArticle(
-        owner: $owner,
-        slug: 'shared-tbi-entry',
-        title: 'TBI BNPL callback flow',
-        content: 'Use TBI authorize token and sync application status callback.',
+        owner: $unrelatedOwner,
+        slug: 'global-access-tbi-entry',
+        title: 'TBI global callback flow',
+        content: 'Use TBI authorize token and global phrase callback lookup.',
         category: 'Integrations / Financing',
         tags: ['provider-tbi', 'bnpl']
     );
 
     $results = app(KnowledgeSearchService::class)->search(
-        query: 'tbi callback',
+        query: 'global phrase callback lookup',
         limit: 5,
         includeDrafts: true,
         userId: $grantee->id

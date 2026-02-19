@@ -34,13 +34,20 @@ test('knowledge base page shows latest cards only for accessible items', functio
     $owner = User::factory()->create();
     $otherUser = User::factory()->create();
 
-    $mine = KnowledgeTestFactory::createOwnedItem($owner, 'mine-card');
-    KnowledgeTestFactory::createOwnedItem($otherUser, 'other-card');
+    $mine = KnowledgeTestFactory::createOwnedItem($owner, 'mine-card', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+    KnowledgeTestFactory::createOwnedItem($otherUser, 'other-card', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
 
     $this->actingAs($owner)
         ->get(route('knowledge-base.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
+            ->missing('tagOptions')
             ->has('latestItems', 1)
             ->where('latestItems.0.id', $mine->id)
         );
@@ -52,16 +59,22 @@ test('knowledge base list supports category and tag filters without a query', fu
     $matchingItem = KnowledgeTestFactory::createOwnedItem($owner, 'laravel-routes', [
         'category' => 'Laravel',
         'tags' => ['mcp', 'routes'],
+        'status' => 'published',
+        'published_at' => now(),
     ]);
 
     KnowledgeTestFactory::createOwnedItem($owner, 'laravel-api', [
         'category' => 'Laravel',
         'tags' => ['mcp'],
+        'status' => 'published',
+        'published_at' => now(),
     ]);
 
     KnowledgeTestFactory::createOwnedItem($owner, 'billing-routes', [
         'category' => 'Billing',
         'tags' => ['mcp', 'routes'],
+        'status' => 'published',
+        'published_at' => now(),
     ]);
 
     $this->actingAs($owner)
@@ -70,7 +83,7 @@ test('knowledge base list supports category and tag filters without a query', fu
             'tags' => 'mcp, routes',
         ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
             ->has('results', 0)
             ->has('latestItems', 1)
             ->where('latestItems.0.id', $matchingItem->id)
@@ -94,7 +107,7 @@ test('knowledge base list hides drafts when include_drafts is disabled', functio
             'include_drafts' => 0,
         ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
             ->has('latestItems', 1)
             ->where('latestItems.0.id', $publishedItem->id)
         );
@@ -106,7 +119,7 @@ test('knowledge item create form starts at details step', function () {
     $this->actingAs($user)
         ->get(route('knowledge-items.create'))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/form')
+            ->component('knowledge-items/form')
             ->where('mode', 'create')
             ->where('step', 'details')
         );
@@ -119,7 +132,7 @@ test('knowledge item edit form supports details and enhancements steps', functio
     $this->actingAs($user)
         ->get(route('knowledge-items.edit', $item))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/form')
+            ->component('knowledge-items/form')
             ->where('mode', 'edit')
             ->where('step', 'details')
         );
@@ -130,7 +143,7 @@ test('knowledge item edit form supports details and enhancements steps', functio
             'step' => 'enhancements',
         ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/form')
+            ->component('knowledge-items/form')
             ->where('mode', 'edit')
             ->where('step', 'enhancements')
         );
@@ -154,6 +167,8 @@ test('knowledge item can be created for authenticated user with generated slug',
     expect($created)->not->toBeNull();
     expect($created->slug)->toBe('my-new-item');
     expect($created->tags)->toBe(['laravel', 'mcp']);
+    expect($created->status)->toBe('published');
+    expect($created->published_at)->not->toBeNull();
 
     $response->assertRedirect(route('knowledge-items.edit', [
         'knowledgeItem' => $created,
@@ -208,7 +223,7 @@ test('knowledge reader page is available for authorized user', function () {
     $this->actingAs($user)
         ->get(route('knowledge-base.show', $item))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/show')
+            ->component('knowledge-base/show')
             ->where('item.id', $item->id)
             ->where('permissions.can_update', true)
         );
@@ -250,7 +265,10 @@ test('code examples and resources are owner only', function () {
 test('shared viewer can see owner item on dashboard but cannot update it', function () {
     $owner = User::factory()->create();
     $viewer = User::factory()->create();
-    $item = KnowledgeTestFactory::createOwnedItem($owner, 'shared-viewer-item');
+    $item = KnowledgeTestFactory::createOwnedItem($owner, 'shared-viewer-item', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
 
     KnowledgeAccountAccess::query()->create([
         'owner_user_id' => $owner->id,
@@ -261,9 +279,17 @@ test('shared viewer can see owner item on dashboard but cannot update it', funct
     $this->actingAs($viewer)
         ->get(route('knowledge-base.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
             ->has('latestItems', 1)
             ->where('latestItems.0.id', $item->id)
+        );
+
+    $this->actingAs($viewer)
+        ->get(route('knowledge-base.show', $item))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-base/show')
+            ->where('permissions.access_level', 'viewer')
+            ->where('permissions.can_update', false)
         );
 
     $this->actingAs($viewer)
@@ -277,10 +303,161 @@ test('shared viewer can see owner item on dashboard but cannot update it', funct
         ->assertForbidden();
 });
 
+test('viewer grant remains read-only for shared items but can create own items', function () {
+    $grantOwner = User::factory()->create();
+    $viewer = User::factory()->create();
+    $firstAuthor = User::factory()->create();
+    $secondAuthor = User::factory()->create();
+
+    KnowledgeAccountAccess::query()->create([
+        'owner_user_id' => $grantOwner->id,
+        'grantee_user_id' => $viewer->id,
+        'permission' => 'viewer',
+    ]);
+
+    $firstItem = KnowledgeTestFactory::createOwnedItem($firstAuthor, 'viewer-global-first', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+    $secondItem = KnowledgeTestFactory::createOwnedItem($secondAuthor, 'viewer-global-second', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($viewer)
+        ->get(route('knowledge-base.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-base/index')
+            ->where('latestItems', fn ($items): bool => collect($items)
+                ->pluck('id')
+                ->intersect([$firstItem->id, $secondItem->id])
+                ->count() === 2)
+        );
+
+    $this->actingAs($viewer)
+        ->get(route('knowledge-base.show', $firstItem))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-base/show')
+            ->where('permissions.access_level', 'viewer')
+            ->where('permissions.can_update', false)
+        );
+
+    $this->actingAs($viewer)
+        ->patch(route('knowledge-items.update', $secondItem), [
+            'title' => 'Viewer cannot update',
+            'content_markdown' => 'Still read only',
+            'category' => 'Nope',
+            'tags' => ['nope'],
+            'status' => 'draft',
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($viewer)
+        ->post(route('knowledge-items.store'), [
+            'title' => 'Viewer can create own item',
+            'content_markdown' => 'Own content remains editable',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $createdByViewer = KnowledgeItem::query()
+        ->where('created_by', $viewer->id)
+        ->latest('id')
+        ->first();
+
+    expect($createdByViewer)->not->toBeNull();
+    expect($createdByViewer?->status)->toBe('published');
+});
+
+test('access level label is owner only for authored items', function () {
+    $owner = User::factory()->create();
+    $editor = User::factory()->create();
+
+    $ownedByEditor = KnowledgeTestFactory::createOwnedItem($editor, 'editor-owned-item', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+    $sharedFromOwner = KnowledgeTestFactory::createOwnedItem($owner, 'owner-shared-item', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+
+    KnowledgeAccountAccess::query()->create([
+        'owner_user_id' => $owner->id,
+        'grantee_user_id' => $editor->id,
+        'permission' => 'editor',
+    ]);
+
+    $this->actingAs($editor)
+        ->get(route('knowledge-items.edit', $ownedByEditor))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-items/form')
+            ->where('permissions.access_level', 'owner')
+        );
+
+    $this->actingAs($editor)
+        ->get(route('knowledge-items.edit', $sharedFromOwner))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-items/form')
+            ->where('permissions.access_level', 'editor')
+        );
+
+    $this->actingAs($editor)
+        ->get(route('knowledge-base.show', $sharedFromOwner))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-base/show')
+            ->where('permissions.access_level', 'editor')
+        );
+});
+
+test('editor grant is not downgraded by additional viewer grants', function () {
+    $viewerGrantOwner = User::factory()->create();
+    $editorGrantOwner = User::factory()->create();
+    $grantee = User::factory()->create();
+    $unrelatedOwner = User::factory()->create();
+
+    KnowledgeAccountAccess::query()->create([
+        'owner_user_id' => $viewerGrantOwner->id,
+        'grantee_user_id' => $grantee->id,
+        'permission' => 'viewer',
+    ]);
+
+    KnowledgeAccountAccess::query()->create([
+        'owner_user_id' => $editorGrantOwner->id,
+        'grantee_user_id' => $grantee->id,
+        'permission' => 'editor',
+    ]);
+
+    $item = KnowledgeTestFactory::createOwnedItem($unrelatedOwner, 'mixed-grants-editor-item', [
+        'status' => 'published',
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($grantee)
+        ->get(route('knowledge-base.show', $item))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-base/show')
+            ->where('permissions.access_level', 'editor')
+            ->where('permissions.can_update', true)
+        );
+
+    $this->actingAs($grantee)
+        ->patch(route('knowledge-items.update', $item), [
+            'title' => 'Updated by mixed grants editor',
+            'content_markdown' => 'Editor grant wins',
+            'category' => 'Engineering',
+            'tags' => ['mixed-grants'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($item->fresh()->title)->toBe('Updated by mixed grants editor');
+});
+
 test('shared editor can update owner item and related assets', function () {
     $owner = User::factory()->create();
     $editor = User::factory()->create();
+    $unrelatedOwner = User::factory()->create();
     $item = KnowledgeTestFactory::createOwnedItem($owner, 'shared-editor-item');
+    $unrelatedOwnerItem = KnowledgeTestFactory::createOwnedItem($unrelatedOwner, 'shared-editor-unrelated-owner-item');
 
     KnowledgeAccountAccess::query()->create([
         'owner_user_id' => $owner->id,
@@ -309,6 +486,28 @@ test('shared editor can update owner item and related assets', function () {
         ]));
 
     $this->actingAs($editor)
+        ->patch(route('knowledge-items.update', $unrelatedOwnerItem), [
+            'title' => 'Edited across all owners',
+            'content_markdown' => '# Global editor access',
+            'category' => 'Engineering',
+            'tags' => ['global', 'editor'],
+            'status' => 'draft',
+        ])
+        ->assertRedirect(route('knowledge-items.edit', [
+            'knowledgeItem' => $unrelatedOwnerItem,
+            'step' => 'details',
+        ]));
+
+    $this->actingAs($editor)
+        ->get(route('knowledge-items.edit', $item))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('knowledge-items/form')
+            ->where('permissions.access_level', 'editor')
+            ->where('permissions.can_update', true)
+            ->where('permissions.can_delete', false)
+        );
+
+    $this->actingAs($editor)
         ->patch(route('knowledge-items.code-examples.update', [$item, $codeExample]), [
             'language' => 'php',
             'code' => '<?php echo "after";',
@@ -316,5 +515,72 @@ test('shared editor can update owner item and related assets', function () {
         ->assertSessionHasNoErrors();
 
     expect($item->fresh()->title)->toBe('Edited by shared editor');
+    expect($unrelatedOwnerItem->fresh()->title)->toBe('Edited across all owners');
     expect($codeExample->fresh()->code)->toContain('after');
+});
+
+test('code examples and resources auto-append sort order and preserve it on updates', function () {
+    $owner = User::factory()->create();
+    $item = KnowledgeTestFactory::createOwnedItem($owner, 'auto-sort-order-item');
+
+    CodeExample::withoutEvents(fn () => CodeExample::query()->create([
+        'knowledge_item_id' => $item->id,
+        'sort_order' => 2,
+        'language' => 'php',
+        'code' => '<?php echo "existing";',
+    ]));
+
+    $existingResource = KnowledgeResource::withoutEvents(fn () => KnowledgeResource::query()->create([
+        'knowledge_item_id' => $item->id,
+        'sort_order' => 7,
+        'type' => 'link',
+        'url' => 'https://example.com/existing',
+    ]));
+
+    $this->actingAs($owner)
+        ->post(route('knowledge-items.code-examples.store', $item), [
+            'language' => 'php',
+            'code' => '<?php echo "new";',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $newCodeExample = CodeExample::query()
+        ->where('knowledge_item_id', $item->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($newCodeExample->sort_order)->toBe(3);
+
+    $this->actingAs($owner)
+        ->patch(route('knowledge-items.code-examples.update', [$item, $newCodeExample]), [
+            'language' => 'php',
+            'code' => '<?php echo "updated";',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($newCodeExample->fresh()->sort_order)->toBe(3);
+
+    $this->actingAs($owner)
+        ->post(route('knowledge-items.resources.store', $item), [
+            'type' => 'link',
+            'url' => 'https://example.com/new',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $newResource = KnowledgeResource::query()
+        ->where('knowledge_item_id', $item->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($newResource->sort_order)->toBe(8);
+
+    $this->actingAs($owner)
+        ->patch(route('knowledge-items.resources.update', [$item, $newResource]), [
+            'type' => 'link',
+            'url' => 'https://example.com/updated',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($newResource->fresh()->sort_order)->toBe(8);
+    expect($existingResource->fresh()->sort_order)->toBe(7);
 });

@@ -54,36 +54,37 @@ test('knowledge search page calls hybrid retrieval with current user scope', fun
             'limit' => 5,
         ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
             ->where('results.0.item.title', 'Routing')
         );
 });
 
-test('knowledge base search route returns shared-owner search results', function () {
+test('knowledge base search route applies granted access globally across all owners', function () {
     KnowledgeTestFactory::configureLexicalSearchOnly();
 
-    $owner = User::factory()->create();
+    $grantOwner = User::factory()->create();
+    $unrelatedOwner = User::factory()->create();
     $grantee = User::factory()->create();
 
     KnowledgeAccountAccess::query()->create([
-        'owner_user_id' => $owner->id,
+        'owner_user_id' => $grantOwner->id,
         'grantee_user_id' => $grantee->id,
         'permission' => 'viewer',
     ]);
 
     $item = KnowledgeTestFactory::createIndexedArticle(
-        owner: $owner,
-        slug: 'shared-route-result',
-        title: 'Speedy shipment creation flow',
-        content: 'Speedy REST API create shipment and print label in Laravel.',
+        owner: $unrelatedOwner,
+        slug: 'global-access-route-result',
+        title: 'Global access shipment flow',
+        content: 'Global access unique phrase for shipment creation lookup.',
         category: 'Integrations / Shipping',
         tags: ['provider-speedy', 'pattern-shipment']
     );
 
     $this->actingAs($grantee)
-        ->get(route('knowledge-base.index', ['query' => 'speedy shipment']))
+        ->get(route('knowledge-base.index', ['query' => 'global access unique phrase']))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
             ->where('results.0.item.slug', $item->slug)
         );
 });
@@ -102,7 +103,7 @@ test('knowledge base search does not invoke retrieval for a blank query', functi
             'tags' => 'mcp, routes',
         ]))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('knowledge/base')
+            ->component('knowledge-base/index')
             ->has('results', 0)
             ->where('filters.query', '')
             ->where('filters.category', 'Laravel')
