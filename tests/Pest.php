@@ -1,5 +1,8 @@
 <?php
 
+use App\Jobs\SyncKnowledgeItemIndex;
+use Illuminate\Support\Facades\Queue;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -14,6 +17,12 @@
 pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
+
+beforeEach(function (): void {
+    Queue::fake([
+        SyncKnowledgeItemIndex::class,
+    ]);
+})->in('Feature');
 
 /*
 |--------------------------------------------------------------------------
