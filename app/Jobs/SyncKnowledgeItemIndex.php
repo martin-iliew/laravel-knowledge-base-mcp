@@ -14,7 +14,7 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Laravel\Ai\Embeddings;
+use App\Services\Embeddings\EmbeddingManager;
 
 /**
  * Rebuild the vector/FTS index for a single KnowledgeItem.
@@ -79,7 +79,8 @@ class SyncKnowledgeItemIndex implements ShouldBeUnique, ShouldQueue
         DatabaseManager $db,
         MarkdownChunker $markdownChunker,
         CodeChunker $codeChunker,
-        TextChunker $textChunker
+        TextChunker $textChunker,
+        EmbeddingManager $embeddingManager
     ): void {
         $now = now();
 
@@ -252,11 +253,10 @@ class SyncKnowledgeItemIndex implements ShouldBeUnique, ShouldQueue
 
         // Embedding call is intentionally outside the DB transaction.
         if ($textsToEmbed !== []) {
-            $response = Embeddings::for($textsToEmbed)->dimensions($embeddingDims)->generate();
-            $vectors = $response->embeddings;
+            $result = $embeddingManager->embedForIndexing($textsToEmbed, $embeddingDims);
+            $vectors = $result->embeddings;
 
-            // Provider/model may or may not exist on the response; keep it nullable.
-            $embeddingModel = isset($response->model) ? (string) $response->model : null;
+            $embeddingModel = $result->model;
 
             foreach ($specIndexesToEmbed as $j => $specIndex) {
                 $vector = $vectors[$j] ?? null;

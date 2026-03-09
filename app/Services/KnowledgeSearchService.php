@@ -6,12 +6,17 @@ use App\Models\CodeExample;
 use App\Models\KnowledgeAccountAccess;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeResource;
+use App\Services\Embeddings\EmbeddingManager;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Reranking;
 
 class KnowledgeSearchService
 {
+    public function __construct(
+        protected EmbeddingManager $embeddingManager,
+    ) {}
+
     /**
      * Search the knowledge base using hybrid retrieval (dense + sparse), then optionally rerank.
      *
@@ -137,6 +142,17 @@ class KnowledgeSearchService
             return [];
         }
 
+        // When using jina-local we must pre-generate the query vector so the
+        // correct "Query: " prefix is applied. For laravel-ai the raw string
+        // is passed through to whereVectorSimilarTo which handles embedding
+        // generation internally via Str::toEmbeddings().
+        $embeddingDims = (int) config('knowledge.defaults.embedding_dimensions');
+
+        /** @var array<int, float>|string $vectorInput */
+        $vectorInput = $this->embeddingManager->isJinaLocal()
+            ? $this->embeddingManager->embedQuery($query, $embeddingDims)
+            : $query;
+
         $queryBuilder = KnowledgeChunk::query()
             ->select(['knowledge_chunks.id'])
             ->whereHas('item', function (Builder $itemQuery) use (
@@ -155,9 +171,9 @@ class KnowledgeSearchService
             });
 
         if ($minSim === null) {
-            $queryBuilder->whereVectorSimilarTo('embedding', $query);
+            $queryBuilder->whereVectorSimilarTo('embedding', $vectorInput);
         } else {
-            $queryBuilder->whereVectorSimilarTo('embedding', $query, minSimilarity: $minSim);
+            $queryBuilder->whereVectorSimilarTo('embedding', $vectorInput, minSimilarity: $minSim);
         }
 
         return $queryBuilder
