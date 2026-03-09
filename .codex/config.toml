@@ -1,4 +1,3 @@
-[mcp_servers.laravel-boost]
-command = "vendor/bin/sail"
-args = ["artisan", "boost:mcp"]
-cwd = "/var/www/html"
+[mcp_servers.laravel-kb]
+url = "http://localhost/mcp/knowledge"
+http_headers = { Authorization = "Bearer 1|cpa690gTdmRNnlk4C2RR8zHpF3EyiuO0Q2jv1PIJ7e664186" }
