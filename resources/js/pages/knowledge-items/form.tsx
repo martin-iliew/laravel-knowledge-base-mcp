@@ -349,58 +349,61 @@ export default function KnowledgeForm({
 
             <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4">
                 <Card className="overflow-hidden rounded-3xl border border-neutral-200/70 shadow-sm dark:border-neutral-800/70 bg-gradient-to-br from-neutral-50 via-neutral-100 to-neutral-200/70 dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950">
-                    <CardHeader className="relative ">
-                        <div className="pointer-events-none absolute -top-20 -right-20 h-40 w-40 rounded-full bg-neutral-500/15 blur-3xl" />
-                        <div className="relative flex flex-wrap items-end justify-between gap-3">
-                            <Heading
-                                title={isEditing ? 'Edit Knowledge Item' : 'Create Knowledge Item'}
-                                description={
-                                    canUpdate
-                                        ? 'Write with a visual editor. Raw markdown remains available when needed.'
-                                        : 'Read-only access: this item was shared with your account.'
-                                }
-                            />
-                            <div className="flex items-center gap-2">
-                                <Badge variant="outline">{accessLevel}</Badge>
-                                <Button asChild variant="outline">
-                                    <Link href={knowledgeBaseIndex()}>Back to list</Link>
-                                </Button>
-                            </div>
-                        </div>
-                        <div className="relative mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {isEditing ? (
-                                <Button
-                                    asChild
-                                    variant={activeStep === 'details' ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="rounded-full"
-                                >
-                                    <Link href={detailsStepHref}>01 Details + markdown</Link>
-                                </Button>
-                            ) : (
-                                <span className="inline-flex h-8 items-center rounded-full border bg-primary px-3 font-medium text-primary-foreground">
-                                    01 Details + markdown
-                                </span>
-                            )}
-                            {isEditing && enhancementsStepHref ? (
-                                <Button
-                                    asChild
-                                    variant={activeStep === 'enhancements' ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="rounded-full"
-                                >
-                                    <Link href={enhancementsStepHref}>
-                                        02 Code + resources (optional)
-                                    </Link>
-                                </Button>
-                            ) : (
-                                <span className="inline-flex h-8 items-center rounded-full border px-3">
-                                    02 Code + resources (optional)
-                                </span>
-                            )}
-                        </div>
-                    </CardHeader>
-                </Card>
+  <CardHeader className="relative space-y-5">
+    <div className="pointer-events-none absolute -top-20 -right-20 h-40 w-40 rounded-full bg-neutral-500/15 blur-3xl" />
+
+    <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <Heading
+        title={isEditing ? 'Edit Knowledge Item' : 'Create Knowledge Item'}
+        description={
+          canUpdate
+            ? 'Write with a visual editor. Raw markdown remains available when needed.'
+            : 'Read-only access: this item was shared with your account.'
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">{accessLevel}</Badge>
+
+        <Button asChild variant="outline">
+          <Link href={knowledgeBaseIndex()}>Back to list</Link>
+        </Button>
+      </div>
+    </div>
+
+    <div className="relative flex flex-wrap items-center gap-2 text-xs">
+      {isEditing ? (
+        <Button
+          asChild
+          variant={activeStep === 'details' ? 'default' : 'outline'}
+          size="sm"
+          className="h-8 rounded-full px-3"
+        >
+          <Link href={detailsStepHref}>01 Details + markdown</Link>
+        </Button>
+      ) : (
+        <span className="inline-flex h-8 items-center rounded-full border bg-primary px-3 font-medium text-primary-foreground">
+          01 Details + markdown
+        </span>
+      )}
+
+      {isEditing && enhancementsStepHref ? (
+        <Button
+          asChild
+          variant={activeStep === 'enhancements' ? 'default' : 'outline'}
+          size="sm"
+          className="h-8 rounded-full px-3"
+        >
+          <Link href={enhancementsStepHref}>02 Code + resources (optional)</Link>
+        </Button>
+      ) : (
+        <span className="inline-flex h-8 items-center rounded-full border border-neutral-200/70 bg-background/60 px-3 text-muted-foreground dark:border-neutral-800/70">
+          02 Code + resources (optional)
+        </span>
+      )}
+    </div>
+  </CardHeader>
+</Card>
 
                 {activeStep === 'details' ? (
                     <Card className="rounded-3xl border border-neutral-200/70 bg-card/95 shadow-sm dark:border-neutral-800/70 dark:bg-neutral-950/60">
