@@ -4,6 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Models\KnowledgeItem;
 use App\Models\User;
+use App\Services\Embeddings\EmbeddingDimensionResolver;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Str;
 use Laravel\Mcp\Request;
@@ -108,7 +109,7 @@ class CreateKnowledgeEntryTool extends Tool
             'created_by' => $userId,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
-            'embedding_dimensions' => (int) config('knowledge.defaults.embedding_dimensions'),
+            'embedding_dimensions' => app(EmbeddingDimensionResolver::class)->resolve(),
         ]);
 
         return Response::structured([

@@ -6,6 +6,7 @@ use App\Models\CodeExample;
 use App\Models\KnowledgeAccountAccess;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeResource;
+use App\Services\Embeddings\EmbeddingDimensionResolver;
 use App\Services\Embeddings\EmbeddingManager;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -146,7 +147,7 @@ class KnowledgeSearchService
         // correct "Query: " prefix is applied. For laravel-ai the raw string
         // is passed through to whereVectorSimilarTo which handles embedding
         // generation internally via Str::toEmbeddings().
-        $embeddingDims = (int) config('knowledge.defaults.embedding_dimensions');
+        $embeddingDims = app(EmbeddingDimensionResolver::class)->resolve();
 
         /** @var array<int, float>|string $vectorInput */
         $vectorInput = $this->embeddingManager->isJinaLocal()

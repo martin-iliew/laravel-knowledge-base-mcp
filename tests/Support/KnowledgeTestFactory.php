@@ -5,6 +5,7 @@ namespace Tests\Support;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeItem;
 use App\Models\User;
+use App\Services\Embeddings\EmbeddingDimensionResolver;
 
 final class KnowledgeTestFactory
 {
@@ -40,7 +41,7 @@ final class KnowledgeTestFactory
             'published_at' => now(),
         ]);
 
-        $dimensions = (int) config('knowledge.defaults.embedding_dimensions', 1536);
+        $dimensions = app(EmbeddingDimensionResolver::class)->resolve();
         $tagsText = collect($tags)
             ->filter(fn ($tag): bool => is_string($tag) && trim($tag) !== '')
             ->map(fn (string $tag): string => trim($tag))

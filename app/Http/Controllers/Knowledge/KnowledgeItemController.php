@@ -8,6 +8,7 @@ use App\Http\Requests\Knowledge\StoreKnowledgeItemRequest;
 use App\Http\Requests\Knowledge\UpdateKnowledgeItemRequest;
 use App\Models\KnowledgeItem;
 use App\Models\User;
+use App\Services\Embeddings\EmbeddingDimensionResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -120,7 +121,7 @@ class KnowledgeItemController extends Controller
             'created_by' => $request->user()->id,
             'chunk_size' => (int) config('knowledge.defaults.chunk_size'),
             'chunk_overlap' => (int) config('knowledge.defaults.chunk_overlap'),
-            'embedding_dimensions' => (int) config('knowledge.defaults.embedding_dimensions'),
+            'embedding_dimensions' => app(EmbeddingDimensionResolver::class)->resolve(),
         ]);
 
         return to_route('knowledge-items.edit', [

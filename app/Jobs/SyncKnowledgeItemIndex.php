@@ -7,6 +7,8 @@ use App\Models\KnowledgeItem;
 use App\Services\Chunking\CodeChunker;
 use App\Services\Chunking\MarkdownChunker;
 use App\Services\Chunking\TextChunker;
+use App\Services\Embeddings\EmbeddingDimensionResolver;
+use App\Services\Embeddings\EmbeddingManager;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,7 +16,6 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Services\Embeddings\EmbeddingManager;
 
 /**
  * Rebuild the vector/FTS index for a single KnowledgeItem.
@@ -84,8 +85,7 @@ class SyncKnowledgeItemIndex implements ShouldBeUnique, ShouldQueue
     ): void {
         $now = now();
 
-        // Embedding dimensions must match what's stored in Postgres vector columns.
-        $embeddingDims = (int) config('knowledge.defaults.embedding_dimensions');
+        $embeddingDims = app(EmbeddingDimensionResolver::class)->resolve();
 
         $item = KnowledgeItem::query()
             ->with(['codeExamples', 'resources'])
@@ -231,7 +231,7 @@ class SyncKnowledgeItemIndex implements ShouldBeUnique, ShouldQueue
         foreach ($specs as $specIndex => $spec) {
             $previous = $existingByHash->get($spec['chunk_hash']);
 
-            // Reuse only when embedding exists AND dimensions match our current config.
+            // Reuse only when embedding exists AND dimensions match the active vector column.
             if (
                 $previous &&
                 $previous->embedding &&

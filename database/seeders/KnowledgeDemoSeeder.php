@@ -8,6 +8,7 @@ use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeItem;
 use App\Models\KnowledgeResource;
 use App\Models\User;
+use App\Services\Embeddings\EmbeddingDimensionResolver;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -112,7 +113,7 @@ class KnowledgeDemoSeeder extends Seeder
         $entries = $this->knowledgeEntries();
 
         $chunkRows = [];
-        $embeddingDimensions = (int) config('knowledge.defaults.embedding_dimensions', 1536);
+        $embeddingDimensions = app(EmbeddingDimensionResolver::class)->resolve();
         $zeroVector = $this->zeroVector($embeddingDimensions);
         $timestamp = now();
 

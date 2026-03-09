@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Embeddings\EmbeddingDimensionResolver;
 use App\Services\Embeddings\EmbeddingManager;
 use Illuminate\Console\Command;
 
@@ -15,7 +16,7 @@ class EmbeddingTestCommand extends Command
 
     public function handle(EmbeddingManager $manager): int
     {
-        $dims = (int) ($this->option('dimensions') ?: config('knowledge.defaults.embedding_dimensions'));
+        $dims = (int) ($this->option('dimensions') ?: app(EmbeddingDimensionResolver::class)->resolve());
         $text = $this->argument('text') ?: 'Laravel is a PHP framework for building web applications.';
         $driver = config('knowledge.embedding.driver', 'laravel-ai');
 
@@ -36,9 +37,9 @@ class EmbeddingTestCommand extends Command
                 return self::FAILURE;
             }
 
-            $this->line("  Model:      ".($result->model ?? '(none)'));
-            $this->line("  Vector dim: ".count($vector));
-            $this->line("  First 5:    [".implode(', ', array_map(fn ($v) => round($v, 6), array_slice($vector, 0, 5))).', ...]');
+            $this->line('  Model:      '.($result->model ?? '(none)'));
+            $this->line('  Vector dim: '.count($vector));
+            $this->line('  First 5:    ['.implode(', ', array_map(fn ($v) => round($v, 6), array_slice($vector, 0, 5))).', ...]');
         } catch (\Throwable $e) {
             $this->error("Passage embedding failed: {$e->getMessage()}");
 
@@ -53,8 +54,8 @@ class EmbeddingTestCommand extends Command
         try {
             $queryVector = $manager->embedQuery($text, $dims);
 
-            $this->line("  Vector dim: ".count($queryVector));
-            $this->line("  First 5:    [".implode(', ', array_map(fn ($v) => round($v, 6), array_slice($queryVector, 0, 5))).', ...]');
+            $this->line('  Vector dim: '.count($queryVector));
+            $this->line('  First 5:    ['.implode(', ', array_map(fn ($v) => round($v, 6), array_slice($queryVector, 0, 5))).', ...]');
         } catch (\Throwable $e) {
             $this->error("Query embedding failed: {$e->getMessage()}");
 
