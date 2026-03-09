@@ -4,6 +4,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Embedding Driver
+    |--------------------------------------------------------------------------
+    |
+    | Controls which embedding backend is used for indexing and search.
+    |
+    | Supported drivers:
+    |   - "laravel-ai" (default): delegates to the Laravel AI Embeddings facade
+    |     using the provider configured in config/ai.php.
+    |   - "jina-local": calls a locally-hosted jina-embeddings-v4 server via
+    |     its OpenAI-compatible /v1/embeddings endpoint.
+    |
+    */
+
+    'embedding' => [
+        'driver' => env('KB_EMBEDDING_DRIVER', 'laravel-ai'),
+
+        'jina_local' => [
+            'base_url' => env('JINA_LOCAL_BASE_URL', 'http://172.24.64.1:8081'),
+            'timeout' => (int) env('JINA_LOCAL_TIMEOUT', 120),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Defaults
     |--------------------------------------------------------------------------
     |
