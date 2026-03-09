@@ -92,8 +92,8 @@ export default function KnowledgeReader({
     const articleRef = useRef<HTMLElement | null>(null);
     const authorName = item.owner.name ?? item.owner.email ?? 'Unknown';
     const authorInitial = authorName.slice(0, 1).toUpperCase();
-    const accessLevel = permissions?.access_level ?? 'viewer';
-    const canUpdate = permissions?.can_update ?? false;
+    const accessLevel = permissions?.access_level;
+    const canUpdate = permissions?.can_update;
 
     useEffect(() => {
         if (activeTab !== 'content') {
@@ -108,57 +108,80 @@ export default function KnowledgeReader({
             <Head title={item.title} />
 
             <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-4 md:p-6">
-                <Card className="overflow-hidden rounded-3xl border border-neutral-200/70 bg-gradient-to-br from-neutral-50 via-neutral-100 to-neutral-200/70 dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-950 shadow-sm dark:border-neutral-800/70 dark:bg-neutral-950/70">
-                    <CardHeader className="relative space-y-5">
-                        <div className="pointer-events-none absolute -top-16 -right-20 h-40 w-40 rounded-full bg-neutral-400/15 blur-3xl dark:bg-neutral-500/20" />
-                        <div className="relative flex flex-wrap items-start justify-between gap-4">
-                            <div className="space-y-3">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline">{accessLevel}</Badge>
-                                    {item.category ? (
-                                        <Badge variant="outline">{item.category}</Badge>
-                                    ) : null}
-                                </div>
-                                <CardTitle className="text-3xl leading-tight">
-                                    {item.title}
-                                </CardTitle>
-                                <CardDescription>
-                                    Structured internal knowledge article
-                                </CardDescription>
-                            </div>
-                            {canUpdate ? (
-                                <Button
-                                    asChild
-                                    variant="outline"
-                                    className="border-neutral-400/50 bg-background/60 backdrop-blur"
-                                >
-                                    <Link href={editKnowledgeItem(item.id)}>Edit</Link>
-                                </Button>
+                <Card className="relative overflow-hidden rounded-3xl border border-neutral-200/70 bg-background shadow-sm dark:border-neutral-800/70 dark:bg-neutral-950/50">
+                    <div className="pointer-events-none absolute -top-24 right-[-6rem] h-56 w-56 rounded-full bg-neutral-400/10 blur-3xl dark:bg-neutral-500/10" />
+
+                    <CardHeader className="relative space-y-6">
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_auto] md:items-start">
+                        <div className="min-w-0">
+                            <CardTitle className="text-2xl leading-[1.08] tracking-tight md:text-3xl md:leading-[1.1]">
+                            {item.title}
+                            </CardTitle>
+
+                            <CardDescription className="mt-3 max-w-prose">
+                            Structured internal knowledge article
+                            </CardDescription>
+
+                            {/* changed: meta as pills (no dots, better scanability) */}
+                            <div className="mt-5 flex flex-wrap gap-2 text-xs">
+                            <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-background/70 px-3 py-1 text-foreground/80 dark:border-neutral-800">
+                                <span className="text-muted-foreground">Access</span>
+                                <span className="font-medium text-foreground/90">{accessLevel}</span>
+                            </span>
+
+                            {item.category ? (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-background/70 px-3 py-1 text-foreground/80 dark:border-neutral-800">
+                                <span className="text-muted-foreground">Category</span>
+                                <span className="font-medium text-foreground/90">{item.category}</span>
+                                </span>
                             ) : null}
+
+                            <span className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-background/70 px-3 py-1 text-foreground/80 dark:border-neutral-800">
+                                <span className="text-muted-foreground">Updated</span>
+                                <span className="font-medium text-foreground/90">{formatDate(item.updated_at)}</span>
+                            </span>
+                            </div>
                         </div>
-                        <div className="relative flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-neutral-300 bg-background/80 text-sm font-semibold dark:border-neutral-700">
+
+                        <div className="flex w-full flex-col gap-3 md:w-[260px]">
+                            {canUpdate ? (
+                            <Button
+                                asChild
+                                variant="outline"
+                                className="w-full border-neutral-400/50 bg-background/70 backdrop-blur"
+                            >
+                                <Link href={editKnowledgeItem(item.id)}>Edit</Link>
+                            </Button>
+                            ) : null}
+
+                            <div className="flex items-center gap-3 rounded-2xl border border-neutral-200/70 bg-background/70 p-4 backdrop-blur dark:border-neutral-800/70">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-300 bg-background/80 text-sm font-semibold dark:border-neutral-700">
                                 {authorInitial}
                             </div>
-                            <div>
-                                <p className="font-medium text-foreground">
-                                    Written by {authorName}
-                                </p>
-                                <p>Last updated {formatDate(item.updated_at)}</p>
+                            <div className="min-w-0 text-sm">
+                                <p className="truncate font-medium text-foreground">{authorName}</p>
+                                <p className="truncate text-muted-foreground">Author</p>
+                            </div>
                             </div>
                         </div>
-                        {item.tags.length > 0 ? (
-                            <div className="relative flex flex-wrap gap-1.5">
-                                {item.tags.map((tag) => (
-                                    <Badge key={`${item.id}-${tag}`} variant="secondary">
-                                        {tag}
-                                    </Badge>
-                                ))}
-                            </div>
-                        ) : null}
+                        </div>
                     </CardHeader>
-                </Card>
 
+                    {item.tags.length > 0 ? (
+                        <div className="border-t border-neutral-200/70 px-6 pt-5 dark:border-neutral-800/70">
+                        <div className="flex flex-wrap gap-2">
+                            {item.tags.map((tag) => (
+                            <span
+                                key={`${item.id}-${tag}`}
+                                className="inline-flex items-center rounded-full border border-neutral-200 bg-background/70 px-3 py-1 text-xs text-foreground/80 dark:border-neutral-800"
+                            >
+                                #{tag}
+                            </span>
+                            ))}
+                        </div>
+                        </div>
+                    ) : null}
+                </Card>
                 <div className="flex flex-wrap gap-2 rounded-xl border bg-muted/25 p-1.5">
                     <button
                         type="button"
